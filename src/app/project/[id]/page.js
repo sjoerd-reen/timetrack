@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, use } from "react";
+import { useState, useEffect, useRef, useCallback, use, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Modal from "@/components/Modal";
 import { PlusIcon, BackIcon, TrashIcon } from "@/components/Icons";
-import { fetchProject, fetchPeople, createPerson, addMember, removeMember, upsertTimeEntry, updateProject } from "@/lib/api";
+import { fetchProject, fetchPeople, createPerson, addMember, removeMember, upsertTimeEntry, updateProject, importAfas, deleteAfas } from "@/lib/api";
 import { fmtEur } from "@/lib/utils";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -85,7 +85,7 @@ function BudgetProgress({ project, members }) {
   if (budget === 0 && budgetWeeks === 0) return null;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm mb-6 p-6">
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm mb-6 p-6 animate-fade-in-up delay-150">
       <h2 className="font-semibold text-gray-900 mb-4">Budgetoverzicht</h2>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-gray-50 rounded-xl p-4">
@@ -225,7 +225,8 @@ function ProjectStats({ project, members }) {
           { label: "Planning Accuracy", value: `${planningAccuracy}%`, color: totalRealisatie > totalPlanning ? "text-red-600" : "text-emerald-600" },
           { label: "Gem. Velocity/Sprint", value: `${avgVelocity.toFixed(0)}u`, color: "text-purple-600" },
         ].map((kpi, i) => (
-          <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
+          <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 animate-fade-in-up"
+            style={{ animationDelay: `${i * 55}ms` }}>
             <div className="text-xs text-gray-500">{kpi.label}</div>
             <div className={`text-xl font-bold mt-1 ${kpi.color}`}>{kpi.value}</div>
           </div>
@@ -235,7 +236,7 @@ function ProjectStats({ project, members }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Budget Burn Chart */}
         {budget > 0 && burnData.length > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 animate-fade-in-up" style={{ animationDelay: "75ms" }}>
             <h3 className="font-semibold text-gray-900 mb-1">Budget Burn-down</h3>
             <p className="text-xs text-gray-400 mb-4">Cumulatieve kosten vs. totaalbudget per sprint</p>
             <ResponsiveContainer width="100%" height={280}>
@@ -253,7 +254,7 @@ function ProjectStats({ project, members }) {
         )}
 
         {/* Planning vs Realisatie per Sprint */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 animate-fade-in-up" style={{ animationDelay: "130ms" }}>
           <h3 className="font-semibold text-gray-900 mb-1">Planning vs. Realisatie per Sprint</h3>
           <p className="text-xs text-gray-400 mb-4">Vergelijk geplande uren met daadwerkelijk gerealiseerde uren</p>
           <ResponsiveContainer width="100%" height={280}>
@@ -270,7 +271,7 @@ function ProjectStats({ project, members }) {
         </div>
 
         {/* Velocity Trend */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 animate-fade-in-up" style={{ animationDelay: "185ms" }}>
           <h3 className="font-semibold text-gray-900 mb-1">Velocity per Sprint</h3>
           <p className="text-xs text-gray-400 mb-4">Totaal gerealiseerde uren per sprint met gemiddelde</p>
           <ResponsiveContainer width="100%" height={280}>
@@ -289,7 +290,7 @@ function ProjectStats({ project, members }) {
         </div>
 
         {/* Cost per Person */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 animate-fade-in-up" style={{ animationDelay: "240ms" }}>
           <h3 className="font-semibold text-gray-900 mb-1">Uren per Teamlid</h3>
           <p className="text-xs text-gray-400 mb-4">Verdeling van gerealiseerde uren over het team</p>
           <ResponsiveContainer width="100%" height={280}>
@@ -309,7 +310,7 @@ function ProjectStats({ project, members }) {
 
         {/* Planning Accuracy */}
         {accuracyData.length > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 lg:col-span-2">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 lg:col-span-2 animate-fade-in-up" style={{ animationDelay: "295ms" }}>
             <h3 className="font-semibold text-gray-900 mb-1">Planning Nauwkeurigheid per Sprint</h3>
             <p className="text-xs text-gray-400 mb-4">100% = perfecte inschatting. Boven 100% = meer uren dan gepland</p>
             <ResponsiveContainer width="100%" height={250}>
@@ -331,7 +332,7 @@ function ProjectStats({ project, members }) {
         )}
 
         {/* Cost breakdown table */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 lg:col-span-2">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 lg:col-span-2 animate-fade-in-up" style={{ animationDelay: "350ms" }}>
           <h3 className="font-semibold text-gray-900 mb-4">Kosten per Teamlid</h3>
           <table className="w-full text-sm">
             <thead>
@@ -402,6 +403,11 @@ function HoursTable({ title, type, members, weekRange, sprintLength, startWeek, 
   const getWeekTotalCost = (week) =>
     members.reduce((sum, m) => sum + getCellCost(m, week), 0);
 
+  const getSprintTotalCost = (s) =>
+    members.reduce((sum, m) =>
+      sum + weeks.slice(s.startIdx, s.startIdx + s.colSpan).reduce((acc, w) => acc + getCellCost(m, w), 0),
+    0);
+
   const handleKeyDown = (e, rowIdx, colIdx) => {
     let nextRow = rowIdx, nextCol = colIdx;
     if (e.key === "Tab" || e.key === "ArrowRight") { e.preventDefault(); nextCol++; }
@@ -416,7 +422,6 @@ function HoursTable({ title, type, members, weekRange, sprintLength, startWeek, 
     }
   };
 
-  const colorAccent = type === "Planning" ? "amber" : "indigo";
   const badgeBg = type === "Planning" ? "bg-amber-100 text-amber-700" : "bg-indigo-100 text-indigo-700";
 
   return (
@@ -434,12 +439,18 @@ function HoursTable({ title, type, members, weekRange, sprintLength, startWeek, 
             {/* Sprint header row */}
             <tr className="bg-gray-100/60">
               <th className="sticky left-0 bg-gray-100/60 z-10 min-w-[180px]"></th>
-              {sprintRanges.map((s) => (
-                <th key={s.sprint} colSpan={s.colSpan}
-                  className="px-2 py-2 text-center text-xs font-semibold text-indigo-600 border-l border-gray-200 first:border-l-0">
-                  Sprint {s.sprint}
-                </th>
-              ))}
+              {sprintRanges.map((s) => {
+                const cost = getSprintTotalCost(s);
+                return (
+                  <th key={s.sprint} colSpan={s.colSpan}
+                    className="px-2 py-2 text-center text-xs font-semibold text-indigo-600 border-l border-gray-200 first:border-l-0">
+                    Sprint {s.sprint}
+                    {cost > 0 && (
+                      <div className="text-[10px] font-medium text-emerald-600 mt-0.5">{fmtEur(cost)}</div>
+                    )}
+                  </th>
+                );
+              })}
               <th className={`min-w-[100px] ${type === "Planning" ? "bg-amber-50/50" : "bg-indigo-50/50"}`}></th>
             </tr>
             {/* Week header row */}
@@ -525,6 +536,245 @@ function HoursTable({ title, type, members, weekRange, sprintLength, startWeek, 
 }
 
 // ═══════════════════════════════════════════════════════════════
+// AFAS TABLE — read-only, type "AFAS"
+// ═══════════════════════════════════════════════════════════════
+const UploadIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+  </svg>
+);
+
+// Returns the Monday of ISO week `week` in `year`
+function getMondayOfISOWeek(year, week) {
+  const jan4 = new Date(year, 0, 4);
+  const week1Mon = new Date(jan4);
+  week1Mon.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+  const result = new Date(week1Mon);
+  result.setDate(week1Mon.getDate() + (week - 1) * 7);
+  return result;
+}
+
+// Returns { week, year } for the ISO week containing `date`
+function getISOWeekYear(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+  const jan4 = new Date(d.getFullYear(), 0, 4);
+  const week = 1 + Math.round(((d - jan4) / 86400000 - 3 + (jan4.getDay() + 6) % 7) / 7);
+  return { week, year: d.getFullYear() };
+}
+
+const ChevronIcon = ({ collapsed }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.2s ease" }}>
+    <path d="m6 9 6 6 6-6"/>
+  </svg>
+);
+
+function AfasTable({ members, weekRange, sprintLength, startWeek, onImport, onClear, importing, importResult, startDate }) {
+  const fileRef = useRef(null);
+  const [collapsed, setCollapsed] = useState(true);
+  const weeks = Array.from({ length: weekRange.end - weekRange.start + 1 }, (_, i) => weekRange.start + i);
+  const sprintRanges = getSprintRanges(weeks, startWeek, sprintLength);
+
+  const getHours = (member, week) => {
+    const entry = member.timeEntries?.find((t) => t.weekNumber === week && t.type === "AFAS");
+    return entry ? entry.hours : null;
+  };
+
+  const getMemberTotal = (member) =>
+    (member.timeEntries || []).filter((t) => t.type === "AFAS").reduce((s, t) => s + t.hours, 0);
+
+  const getWeekTotal = (week) =>
+    members.reduce((sum, m) => {
+      const e = m.timeEntries?.find((t) => t.weekNumber === week && t.type === "AFAS");
+      return sum + (e ? e.hours : 0);
+    }, 0);
+
+  const hasAnyData = members.some((m) => getMemberTotal(m) > 0);
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const xlsxMod = await import("xlsx");
+    const XLSX = xlsxMod.default ?? xlsxMod;
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+    // Find header row (contains "Werksoort")
+    const headerIdx = raw.findIndex((r) => r.some((c) => String(c).trim() === "Werksoort"));
+    const dataRows = headerIdx >= 0 ? raw.slice(headerIdx + 1) : raw.slice(1);
+
+    // Column indices from header row
+    const header = raw[headerIdx] ?? [];
+    const colIdx = (name) => header.findIndex((c) => String(c).trim() === name);
+    const iBoekjaar = colIdx("Boekjaar");
+    const iNaam = colIdx("Naam");
+    const iWeek = colIdx("Week");
+    const iAant = colIdx("Aant.");
+    const iWerk = colIdx("Werksoort");
+
+    const naam    = (r) => String(r[iNaam    >= 0 ? iNaam    : 4] ?? "").trim();
+    const calWeek = (r) => Number(r[iWeek    >= 0 ? iWeek    : 2]);
+    const aant    = (r) => Number(r[iAant    >= 0 ? iAant    : 6]) || 0;
+    const werk    = (r) => String(r[iWerk    >= 0 ? iWerk    : 7] ?? "").trim();
+    const jaar    = (r) => Number(r[iBoekjaar >= 0 ? iBoekjaar : 0]);
+
+    // Compute the Monday of the project's start week once
+    let startMonday = null;
+    if (startDate) {
+      const { week: sw, year: sy } = getISOWeekYear(new Date(startDate));
+      startMonday = getMondayOfISOWeek(sy, sw);
+    }
+
+    // Convert AFAS calendar week → relative project week
+    const toProjectWeek = (year, cw) => {
+      if (!startMonday || !year || !cw) return cw;
+      const afasMonday = getMondayOfISOWeek(year, cw);
+      return Math.round((afasMonday - startMonday) / (7 * 24 * 3600 * 1000)) + 1;
+    };
+
+    const rows = dataRows
+      .filter((r) => werk(r) === "BILL" && naam(r) && calWeek(r) > 0 && aant(r) > 0)
+      .map((r) => ({ naam: naam(r), weekNumber: toProjectWeek(jaar(r), calWeek(r)), hours: aant(r) }))
+      .filter((r) => r.weekNumber >= 1);
+
+    e.target.value = "";
+    onImport(rows);
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50 flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setCollapsed((c) => !c)}
+            className="text-gray-400 hover:text-gray-600 transition-colors duration-150 -ml-1"
+            title={collapsed ? "Uitklappen" : "Inklappen"}
+          >
+            <ChevronIcon collapsed={collapsed} />
+          </button>
+          <h2 className="font-semibold text-gray-900">AFAS Nacalculatie</h2>
+          <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-teal-100 text-teal-700">AFAS</span>
+          {importing && <span className="text-xs text-teal-600 bg-teal-50 px-3 py-1 rounded-full animate-pulse">Importeren...</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          {hasAnyData && (
+            <button onClick={onClear} className="text-xs text-gray-400 hover:text-red-500 transition px-2 py-1 rounded-lg hover:bg-red-50">
+              Wissen
+            </button>
+          )}
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={importing}
+            className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-95 text-white transition-all duration-150 disabled:opacity-50"
+          >
+            <UploadIcon /> AFAS importeren
+          </button>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
+        </div>
+      </div>
+
+      {!collapsed && (
+        <>
+        {/* Import result banner */}
+        {importResult && (
+          <div className={`mx-4 mt-3 px-4 py-2.5 rounded-xl text-xs font-medium flex items-start gap-2 ${
+            importResult.unmatched.length > 0 ? "bg-amber-50 text-amber-800" : "bg-teal-50 text-teal-800"
+          }`}>
+            <div className="flex-1">
+              <span className="font-semibold">{importResult.created} regels geïmporteerd</span>
+              {importResult.matched.length > 0 && (
+                <span className="ml-2 text-teal-700">✓ {importResult.matched.join(", ")}</span>
+              )}
+              {importResult.unmatched.length > 0 && (
+                <span className="ml-2 text-amber-700">⚠ Niet herkend: {importResult.unmatched.join(", ")}</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!hasAnyData && !importing ? (
+          <div className="px-6 py-10 text-center text-gray-400 text-sm">
+            Nog geen AFAS data geïmporteerd. Klik op <strong>AFAS importeren</strong> om een export te uploaden.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-teal-50/40">
+                <th className="sticky left-0 bg-teal-50/40 z-10 min-w-[180px]" />
+                {sprintRanges.map((s) => (
+                  <th key={s.sprint} colSpan={s.colSpan}
+                    className="px-2 py-2 text-center text-xs font-semibold text-teal-700 border-l border-gray-200 first:border-l-0">
+                    Sprint {s.sprint}
+                  </th>
+                ))}
+                <th className="min-w-[100px] bg-teal-50/60" />
+              </tr>
+              <tr className="bg-gray-50/80">
+                <th className="text-left px-4 py-2.5 font-medium text-gray-600 sticky left-0 bg-gray-50/80 z-10 min-w-[180px]">Medewerker</th>
+                {weeks.map((w) => (
+                  <th key={w} className="px-2 py-2.5 font-medium text-gray-500 text-center min-w-[80px]">Wk {w}</th>
+                ))}
+                <th className="px-4 py-2.5 font-semibold text-gray-700 text-center min-w-[100px] bg-teal-50/60">Totaal</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {members.map((m) => (
+                <tr key={m.id} className="hover:bg-teal-50/20">
+                  <td className="px-4 py-2.5 sticky left-0 bg-white z-10 border-r border-gray-50">
+                    <div className="font-medium text-gray-900 text-sm">{m.person.name}</div>
+                    <div className="text-xs text-gray-400">{m.person.role}</div>
+                  </td>
+                  {weeks.map((w) => {
+                    const h = getHours(m, w);
+                    return (
+                      <td key={w} className="px-2 py-2.5 text-center">
+                        {h != null && h > 0 ? (
+                          <span className="text-sm font-medium text-teal-700">{h}</span>
+                        ) : (
+                          <span className="text-gray-200">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="px-4 py-2.5 text-center bg-teal-50/30">
+                    <div className="font-semibold text-teal-700">{getMemberTotal(m) || "—"}{getMemberTotal(m) > 0 ? "u" : ""}</div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-gray-50/80 border-t-2 border-gray-200">
+                <td className="px-4 py-3 font-semibold text-gray-700 sticky left-0 bg-gray-50/80 z-10">Totaal</td>
+                {weeks.map((w) => {
+                  const t = getWeekTotal(w);
+                  return (
+                    <td key={w} className="px-2 py-2 text-center">
+                      <span className={`font-semibold ${t > 0 ? "text-teal-700" : "text-gray-200"}`}>{t > 0 ? t : "—"}</span>
+                    </td>
+                  );
+                })}
+                <td className="px-4 py-2 text-center bg-teal-50/50">
+                  <div className="font-bold text-teal-700">
+                    {members.reduce((s, m) => s + getMemberTotal(m), 0)}u
+                  </div>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+      </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // PROJECT DETAIL PAGE
 // ═══════════════════════════════════════════════════════════════
 export default function ProjectDetailPage({ params }) {
@@ -542,6 +792,8 @@ export default function ProjectDetailPage({ params }) {
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState("hours"); // "hours" | "stats"
   const [editForm, setEditForm] = useState({});
+  const [importingAfas, setImportingAfas] = useState(false);
+  const [afasResult, setAfasResult] = useState(null);
 
   const load = async () => {
     const [proj, ppl] = await Promise.all([fetchProject(id), fetchPeople()]);
@@ -553,6 +805,23 @@ export default function ProjectDetailPage({ params }) {
     setLoading(false);
   };
   useEffect(() => { load(); }, [id]);
+
+  const handleAfasImport = useCallback(async (rows) => {
+    setImportingAfas(true);
+    try {
+      const result = await importAfas(id, rows);
+      setAfasResult(result);
+      load();
+    } finally {
+      setImportingAfas(false);
+    }
+  }, [id]);
+
+  const handleAfasClear = useCallback(async () => {
+    await deleteAfas(id);
+    setAfasResult(null);
+    load();
+  }, [id]);
 
   const handleSetHours = useCallback(async (member, week, value, type) => {
     const hours = value === "" ? 0 : parseFloat(value);
@@ -644,7 +913,7 @@ export default function ProjectDetailPage({ params }) {
           </button>
 
           {/* Header */}
-          <div className="flex items-start justify-between mb-6">
+          <div className="flex items-start justify-between mb-6 animate-fade-in-up">
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
@@ -657,17 +926,17 @@ export default function ProjectDetailPage({ params }) {
               {/* View toggle */}
               <div className="flex items-center bg-gray-100 rounded-xl p-1">
                 <button onClick={() => setActiveView("hours")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${activeView === "hours" ? "bg-white shadow text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeView === "hours" ? "bg-white shadow text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
                   <TableIcon /> Uren
                 </button>
                 <button onClick={() => setActiveView("stats")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${activeView === "stats" ? "bg-white shadow text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeView === "stats" ? "bg-white shadow text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
                   <ChartIcon /> Statistieken
                 </button>
               </div>
               {/* Week range (only in hours view) */}
               {activeView === "hours" && (
-                <div className="flex items-center gap-2 text-sm bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm">
+                <div className="flex items-center gap-2 text-sm bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm animate-fade-in">
                   <span className="text-gray-500 font-medium">Weken:</span>
                   <input type="number" value={weekRange.start} onChange={(e) => setWeekRange({ ...weekRange, start: parseInt(e.target.value) || 1 })}
                     className="w-14 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center outline-none focus:ring-2 focus:ring-indigo-500" min={1} max={53} />
@@ -682,59 +951,80 @@ export default function ProjectDetailPage({ params }) {
           {/* Budget Progress (always visible) */}
           <BudgetProgress project={project} members={members} />
 
-          {/* ── Hours View ── */}
-          {activeView === "hours" && (
-            <>
-              {/* Team Section */}
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm mb-6">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
-                  <h2 className="font-semibold text-gray-900">Teamleden</h2>
-                  <button onClick={() => setShowAddMember(true)}
-                    className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition">
-                    <PlusIcon /> Lid toevoegen
-                  </button>
+          {/* ── View content — key triggers re-animation on tab switch ── */}
+          <div key={activeView}>
+            {/* ── Hours View ── */}
+            {activeView === "hours" && (
+              <>
+                {/* Team Section */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm mb-6 animate-fade-in-up">
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
+                    <h2 className="font-semibold text-gray-900">Teamleden</h2>
+                    <button onClick={() => setShowAddMember(true)}
+                      className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition">
+                      <PlusIcon /> Lid toevoegen
+                    </button>
+                  </div>
+                  {members.length === 0 ? (
+                    <div className="px-6 py-8 text-center text-gray-400 text-sm">Nog geen teamleden. Voeg iemand toe om te beginnen.</div>
+                  ) : (
+                    <div className="divide-y divide-gray-50">
+                      {members.map((m) => (
+                        <div key={m.id} className="flex items-center justify-between px-6 py-3 hover:bg-gray-50/50 transition-colors duration-150">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                              style={{ background: "linear-gradient(135deg,#e0e7ff,#c7d2fe)", color: "#6366f1" }}>
+                              {m.person.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{m.person.name}</div>
+                              <div className="text-xs text-gray-400">{m.person.role}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-sm text-gray-500">{fmtEur(m.hourlyRate)}/uur</div>
+                            <button onClick={() => handleRemoveMember(m.id)} className="text-gray-300 hover:text-red-500 active:scale-90 transition-all duration-150"><TrashIcon /></button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {members.length === 0 ? (
-                  <div className="px-6 py-8 text-center text-gray-400 text-sm">Nog geen teamleden. Voeg iemand toe om te beginnen.</div>
-                ) : (
-                  <div className="divide-y divide-gray-50">
-                    {members.map((m) => (
-                      <div key={m.id} className="flex items-center justify-between px-6 py-3 hover:bg-gray-50/50">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">
-                            {m.person.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
-                          </div>
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{m.person.name}</div>
-                            <div className="text-xs text-gray-400">{m.person.role}</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <div className="text-sm text-gray-600">{fmtEur(m.hourlyRate)}/uur</div>
-                          <button onClick={() => handleRemoveMember(m.id)} className="text-gray-300 hover:text-red-500 transition"><TrashIcon /></button>
-                        </div>
-                      </div>
-                    ))}
+
+                {/* Tables */}
+                {members.length > 0 && (
+                  <div className="space-y-6">
+                    <div className="animate-fade-in-up delay-100">
+                      <HoursTable title="Planning" type="Planning" members={members} weekRange={weekRange}
+                        sprintLength={sprintLength} startWeek={weekRange.start} onSetHours={handleSetHours} saving={saving} />
+                    </div>
+                    <div className="animate-fade-in-up delay-200">
+                      <HoursTable title="Realisatie" type="Realisatie" members={members} weekRange={weekRange}
+                        sprintLength={sprintLength} startWeek={weekRange.start} onSetHours={handleSetHours} saving={saving} />
+                    </div>
+                    <div className="animate-fade-in-up delay-300">
+                      <AfasTable
+                        members={members}
+                        weekRange={weekRange}
+                        sprintLength={sprintLength}
+                        startWeek={weekRange.start}
+                        onImport={handleAfasImport}
+                        onClear={handleAfasClear}
+                        importing={importingAfas}
+                        importResult={afasResult}
+                        startDate={project.startDate}
+                      />
+                    </div>
                   </div>
                 )}
-              </div>
+              </>
+            )}
 
-              {/* Tables */}
-              {members.length > 0 && (
-                <div className="space-y-6">
-                  <HoursTable title="Planning" type="Planning" members={members} weekRange={weekRange}
-                    sprintLength={sprintLength} startWeek={weekRange.start} onSetHours={handleSetHours} saving={saving} />
-                  <HoursTable title="Realisatie" type="Realisatie" members={members} weekRange={weekRange}
-                    sprintLength={sprintLength} startWeek={weekRange.start} onSetHours={handleSetHours} saving={saving} />
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ── Stats View ── */}
-          {activeView === "stats" && (
-            <ProjectStats project={project} members={members} />
-          )}
+            {/* ── Stats View ── */}
+            {activeView === "stats" && (
+              <ProjectStats project={project} members={members} />
+            )}
+          </div>
 
           {/* ── Add Member Modal ── */}
           <Modal open={showAddMember} onClose={() => { setShowAddMember(false); setShowNewPerson(false); }} title="Teamlid Toevoegen">

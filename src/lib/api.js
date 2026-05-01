@@ -34,5 +34,16 @@ export const removeMember = (id) =>
 export const upsertTimeEntry = (data) =>
   fetch("/api/time-entries", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(json);
 
+// AFAS import
+export const importAfas = (projectId, rows) =>
+  fetch(`/api/projects/${projectId}/afas`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rows }),
+  }).then(json);
+
+export const deleteAfas = (projectId) =>
+  fetch(`/api/projects/${projectId}/afas`, { method: "DELETE" }).then(json);
+
 // Stats
 export const fetchStats = () => fetch("/api/stats").then(json);
