@@ -1,0 +1,6 @@
+-- Add budget fields to Project table
+-- Run this in Neon SQL Editor
+
+ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "budget" DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "budgetWeeks" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "sprintLengthWeeks" INTEGER NOT NULL DEFAULT 2;

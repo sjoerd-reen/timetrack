@@ -10,6 +10,8 @@ export const fetchProjects = () => fetch("/api/projects").then(json);
 export const fetchProject = (id) => fetch(`/api/projects/${id}`).then(json);
 export const createProject = (data) =>
   fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(json);
+export const updateProject = (data) =>
+  fetch("/api/projects", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(json);
 export const deleteProject = (id) =>
   fetch(`/api/projects?id=${id}`, { method: "DELETE" }).then(json);
 

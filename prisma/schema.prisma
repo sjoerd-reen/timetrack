@@ -13,6 +13,9 @@ model Project {
   name        String
   description String          @default("")
   startDate   String          @default("")
+  budget      Float           @default(0)
+  budgetWeeks Int             @default(0)
+  sprintLengthWeeks Int       @default(2)
   createdAt   DateTime        @default(now())
   members     ProjectMember[]
 }

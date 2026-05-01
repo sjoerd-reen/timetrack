@@ -29,6 +29,9 @@ export async function GET() {
       name: p.name,
       description: p.description,
       startDate: p.startDate,
+      budget: p.budget,
+      budgetWeeks: p.budgetWeeks,
+      sprintLengthWeeks: p.sprintLengthWeeks,
       memberCount: p.members.length,
       totalHours,
       totalCost,
@@ -46,9 +49,29 @@ export async function POST(request) {
       name: body.name,
       description: body.description || "",
       startDate: body.startDate || "",
+      budget: parseFloat(body.budget) || 0,
+      budgetWeeks: parseInt(body.budgetWeeks) || 0,
+      sprintLengthWeeks: parseInt(body.sprintLengthWeeks) || 2,
     },
   });
   return NextResponse.json(project, { status: 201 });
+}
+
+// PUT /api/projects — update a project
+export async function PUT(request) {
+  const body = await request.json();
+  const project = await prisma.project.update({
+    where: { id: body.id },
+    data: {
+      name: body.name,
+      description: body.description,
+      startDate: body.startDate,
+      budget: parseFloat(body.budget) || 0,
+      budgetWeeks: parseInt(body.budgetWeeks) || 0,
+      sprintLengthWeeks: parseInt(body.sprintLengthWeeks) || 2,
+    },
+  });
+  return NextResponse.json(project);
 }
 
 // DELETE /api/projects?id=1 — delete a project
