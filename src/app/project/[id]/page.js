@@ -56,7 +56,7 @@ function getSprintRanges(weeks, startWeek, sprintLength) {
 // ═══════════════════════════════════════════════════════════════
 // BUDGET PROGRESS COMPONENT
 // ═══════════════════════════════════════════════════════════════
-function BudgetProgress({ project, members, weekRange }) {
+function BudgetProgress({ project, members }) {
   const budget = project.budget || 0;
   const budgetWeeks = project.budgetWeeks || 0;
 
@@ -67,11 +67,19 @@ function BudgetProgress({ project, members, weekRange }) {
       .reduce((s, t) => s + t.hours * m.hourlyRate, 0),
   0);
 
-  // Time elapsed
-  const currentWeek = weekRange.end;
-  const timePercentage = budgetWeeks > 0 ? Math.min((currentWeek / budgetWeeks) * 100, 100) : 0;
+  // Calculate elapsed weeks from startDate
+  let elapsedWeeks = 0;
+  if (project.startDate) {
+    const start = new Date(project.startDate);
+    const now = new Date();
+    const diffMs = now - start;
+    elapsedWeeks = Math.max(0, Math.round(diffMs / (7 * 24 * 60 * 60 * 1000)));
+  }
+
+  const timePercentage = budgetWeeks > 0 ? (elapsedWeeks / budgetWeeks) * 100 : 0;
   const budgetPercentage = budget > 0 ? (totalSpend / budget) * 100 : 0;
   const isOverBudget = budgetPercentage > 100;
+  const isOverTime = timePercentage > 100;
   const isAheadOfSchedule = budgetPercentage > timePercentage;
 
   if (budget === 0 && budgetWeeks === 0) return null;
@@ -94,7 +102,7 @@ function BudgetProgress({ project, members, weekRange }) {
         </div>
         <div className="bg-gray-50 rounded-xl p-4">
           <div className="text-xs text-gray-500 mb-1">Looptijd</div>
-          <div className="text-xl font-bold text-gray-900">Wk {currentWeek} / {budgetWeeks}</div>
+          <div className={`text-xl font-bold ${isOverTime ? "text-red-600" : "text-gray-900"}`}>Wk {elapsedWeeks} / {budgetWeeks}</div>
         </div>
       </div>
 
@@ -539,6 +547,9 @@ export default function ProjectDetailPage({ params }) {
     const [proj, ppl] = await Promise.all([fetchProject(id), fetchPeople()]);
     setProject(proj);
     setPeople(ppl);
+    if (proj.budgetWeeks > 0) {
+      setWeekRange((prev) => ({ ...prev, end: proj.budgetWeeks }));
+    }
     setLoading(false);
   };
   useEffect(() => { load(); }, [id]);
@@ -669,7 +680,7 @@ export default function ProjectDetailPage({ params }) {
           </div>
 
           {/* Budget Progress (always visible) */}
-          <BudgetProgress project={project} members={members} weekRange={weekRange} />
+          <BudgetProgress project={project} members={members} />
 
           {/* ── Hours View ── */}
           {activeView === "hours" && (
