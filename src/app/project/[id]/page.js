@@ -543,6 +543,12 @@ const UploadIcon = () => (
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
   </svg>
 );
+const SpinnerIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+    style={{ animation: "spin 0.8s linear infinite" }}>
+    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+  </svg>
+);
 
 // Excel serial date (days since Dec 30, 1899) → UTC JS Date
 function excelSerialToDate(serial) {
@@ -559,22 +565,34 @@ function toDateInput(date) {
 // Get the start Date of sprint `sprintNum` (1-indexed)
 function getAfasSprintStart(sprintNum, overrides, projectStartDate, sprintLengthWeeks) {
   const ovr = overrides.find((s) => s.sprint === sprintNum);
-  if (ovr) return new Date(ovr.startDate);
+  if (ovr?.startDate) return new Date(ovr.startDate);
   if (!projectStartDate) return null;
   const d = new Date(projectStartDate);
   d.setUTCDate(d.getUTCDate() + (sprintNum - 1) * (sprintLengthWeeks || 2) * 7);
   return d;
 }
 
+// Get the end Date of sprint `sprintNum` (explicit override or day before next sprint start)
+function getAfasSprintEnd(sprintNum, numSprints, overrides, projectStartDate, sprintLengthWeeks) {
+  const ovr = overrides.find((s) => s.sprint === sprintNum);
+  if (ovr?.endDate) return new Date(ovr.endDate);
+  if (sprintNum >= numSprints) return null; // last sprint: no upper bound
+  const nextStart = getAfasSprintStart(sprintNum + 1, overrides, projectStartDate, sprintLengthWeeks);
+  if (!nextStart) return null;
+  const d = new Date(nextStart);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d;
+}
+
 // Map a Date to a sprint number given overrides + project defaults
 function dateToAfasSprint(date, numSprints, overrides, projectStartDate, sprintLengthWeeks) {
-  let result = 1;
   for (let s = 1; s <= numSprints; s++) {
     const start = getAfasSprintStart(s, overrides, projectStartDate, sprintLengthWeeks);
-    if (!start || date < start) break;
-    result = s;
+    const end = getAfasSprintEnd(s, numSprints, overrides, projectStartDate, sprintLengthWeeks);
+    if (!start) continue;
+    if (date >= start && (!end || date <= end)) return s;
   }
-  return result;
+  return 1;
 }
 
 const ChevronIcon = ({ collapsed }) => (
@@ -675,7 +693,6 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
           </button>
           <h2 className="font-semibold text-gray-900">AFAS Nacalculatie</h2>
           <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-teal-100 text-teal-700">AFAS</span>
-          {importing && <span className="text-xs text-teal-600 bg-teal-50 px-3 py-1 rounded-full animate-pulse">Importeren...</span>}
         </div>
         <div className="flex items-center gap-2">
           {hasAnyData && (
@@ -686,9 +703,9 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
           <button
             onClick={() => fileRef.current?.click()}
             disabled={importing}
-            className={`flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-95 text-white transition-all duration-150 ${importing ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+            className={`flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl text-white transition-all duration-150 ${importing ? "bg-teal-500 cursor-not-allowed" : "bg-teal-600 hover:bg-teal-700 active:scale-95 cursor-pointer"}`}
           >
-            <UploadIcon /> AFAS importeren
+            {importing ? <><SpinnerIcon /> Importeren...</> : <><UploadIcon /> AFAS importeren</>}
           </button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={handleFile} />
         </div>
@@ -717,7 +734,7 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
           <div className="mx-4 mt-3 mb-1 px-4 py-2.5 rounded-xl bg-gray-50 text-xs text-gray-500 flex items-start gap-2">
             <span className="shrink-0">📅</span>
             <span>
-              Pas de startdatum van een sprint aan als die sprint later begon dan gepland.
+              Pas per sprint de <strong>start-</strong> en <strong>einddatum</strong> aan als een sprint later begon of langer duurde dan gepland.
               Uren worden op basis van de exacte datum uit AFAS aan de juiste sprint toegewezen.
             </span>
           </div>
@@ -729,21 +746,39 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
                   <th className="sticky left-0 bg-teal-50/40 z-10 min-w-[180px]" />
                   {sprints.map((s) => {
                     const startDate = getAfasSprintStart(s, sprintOverrides, project.startDate, sprintLengthWeeks);
-                    const isOverridden = sprintOverrides.some((o) => o.sprint === s);
+                    const endDate = getAfasSprintEnd(s, maxSprint, sprintOverrides, project.startDate, sprintLengthWeeks);
+                    const ovr = sprintOverrides.find((o) => o.sprint === s);
+                    const startOverridden = !!ovr?.startDate;
+                    const endOverridden = !!ovr?.endDate;
+                    const dateInputClass = (overridden) =>
+                      `w-full text-center text-[10px] font-normal border rounded-md px-1 py-0.5 outline-none focus:ring-1 focus:ring-teal-400 transition ${
+                        overridden ? "border-teal-300 text-teal-700 bg-teal-50" : "border-gray-200 text-gray-400 bg-white"
+                      }`;
                     return (
-                      <th key={s} className="px-2 py-2 text-center text-xs font-semibold text-teal-700 border-l border-gray-200 first:border-l-0 min-w-[120px]">
-                        <div>Sprint {s}</div>
-                        <input
-                          type="date"
-                          value={startDate ? toDateInput(startDate) : ""}
-                          onChange={(e) => onUpdateSprintDate(s, e.target.value)}
-                          className={`mt-1 w-full text-center text-[10px] font-normal border rounded-md px-1 py-0.5 outline-none focus:ring-1 focus:ring-teal-400 transition ${
-                            isOverridden
-                              ? "border-teal-300 text-teal-700 bg-teal-50"
-                              : "border-gray-200 text-gray-400 bg-white"
-                          }`}
-                          title={isOverridden ? "Aangepaste startdatum" : "Berekende startdatum (klik om aan te passen)"}
-                        />
+                      <th key={s} className="px-2 py-2 text-center text-xs font-semibold text-teal-700 border-l border-gray-200 first:border-l-0 min-w-[140px]">
+                        <div className="mb-1.5">Sprint {s}</div>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px] text-gray-400 w-5 shrink-0 text-right">van</span>
+                            <input
+                              type="date"
+                              value={startDate ? toDateInput(startDate) : ""}
+                              onChange={(e) => onUpdateSprintDate(s, "startDate", e.target.value)}
+                              className={dateInputClass(startOverridden)}
+                              title={startOverridden ? "Aangepaste startdatum" : "Berekende startdatum"}
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px] text-gray-400 w-5 shrink-0 text-right">t/m</span>
+                            <input
+                              type="date"
+                              value={endDate ? toDateInput(endDate) : ""}
+                              onChange={(e) => onUpdateSprintDate(s, "endDate", e.target.value)}
+                              className={dateInputClass(endOverridden)}
+                              title={endOverridden ? "Aangepaste einddatum" : "Berekende einddatum"}
+                            />
+                          </div>
+                        </div>
                       </th>
                     );
                   })}
@@ -751,7 +786,20 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {!hasAnyData && !importing ? (
+                {importing ? (
+                  <tr>
+                    <td colSpan={sprints.length + 2} className="px-6 py-12 text-center">
+                      <div className="flex flex-col items-center gap-3 text-teal-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                          style={{ animation: "spin 0.8s linear infinite" }}>
+                          <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                        </svg>
+                        <span className="text-sm font-medium">Bezig met importeren...</span>
+                        <span className="text-xs text-gray-400">Uren worden verwerkt en aan sprints toegewezen</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : !hasAnyData ? (
                   <tr>
                     <td colSpan={sprints.length + 2} className="px-6 py-10 text-center text-gray-400">
                       Nog geen AFAS data. Klik op <strong>AFAS importeren</strong> om een export te uploaden.
@@ -864,10 +912,12 @@ export default function ProjectDetailPage({ params }) {
     load();
   }, [id]);
 
-  const handleUpdateSprintDate = useCallback(async (sprintNum, dateStr) => {
+  const handleUpdateSprintDate = useCallback(async (sprintNum, field, dateStr) => {
     const current = JSON.parse(project.sprintStartDates || "[]");
+    const existing = current.find((s) => s.sprint === sprintNum) ?? { sprint: sprintNum };
     const updated = current.filter((s) => s.sprint !== sprintNum);
-    if (dateStr) updated.push({ sprint: sprintNum, startDate: dateStr });
+    const newEntry = { ...existing, [field]: dateStr || undefined };
+    if (newEntry.startDate || newEntry.endDate) updated.push(newEntry);
     updated.sort((a, b) => a.sprint - b.sprint);
     await updateProject({ ...project, sprintStartDates: JSON.stringify(updated) });
     load();
