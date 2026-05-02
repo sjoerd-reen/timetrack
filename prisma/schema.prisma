@@ -16,6 +16,7 @@ model Project {
   budget      Float           @default(0)
   budgetWeeks Int             @default(0)
   sprintLengthWeeks Int       @default(2)
+  sprintStartDates  String   @default("[]")
   createdAt   DateTime        @default(now())
   members     ProjectMember[]
 }
