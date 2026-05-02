@@ -52,6 +52,7 @@ export async function POST(request) {
       budget: parseFloat(body.budget) || 0,
       budgetWeeks: parseInt(body.budgetWeeks) || 0,
       sprintLengthWeeks: parseInt(body.sprintLengthWeeks) || 2,
+      sprintStartDates: body.sprintStartDates || "[]",
     },
   });
   return NextResponse.json(project, { status: 201 });
@@ -69,6 +70,7 @@ export async function PUT(request) {
       budget: parseFloat(body.budget) || 0,
       budgetWeeks: parseInt(body.budgetWeeks) || 0,
       sprintLengthWeeks: parseInt(body.sprintLengthWeeks) || 2,
+      sprintStartDates: body.sprintStartDates || "[]",
     },
   });
   return NextResponse.json(project);

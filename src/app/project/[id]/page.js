@@ -544,24 +544,37 @@ const UploadIcon = () => (
   </svg>
 );
 
-// Returns the Monday of ISO week `week` in `year`
-function getMondayOfISOWeek(year, week) {
-  const jan4 = new Date(year, 0, 4);
-  const week1Mon = new Date(jan4);
-  week1Mon.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
-  const result = new Date(week1Mon);
-  result.setDate(week1Mon.getDate() + (week - 1) * 7);
-  return result;
+// Excel serial date (days since Dec 30, 1899) → UTC JS Date
+function excelSerialToDate(serial) {
+  return new Date((serial - 25569) * 86400 * 1000);
 }
 
-// Returns { week, year } for the ISO week containing `date`
-function getISOWeekYear(date) {
+// Format a Date as YYYY-MM-DD
+function toDateInput(date) {
+  if (!date) return "";
   const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
-  const jan4 = new Date(d.getFullYear(), 0, 4);
-  const week = 1 + Math.round(((d - jan4) / 86400000 - 3 + (jan4.getDay() + 6) % 7) / 7);
-  return { week, year: d.getFullYear() };
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+// Get the start Date of sprint `sprintNum` (1-indexed)
+function getAfasSprintStart(sprintNum, overrides, projectStartDate, sprintLengthWeeks) {
+  const ovr = overrides.find((s) => s.sprint === sprintNum);
+  if (ovr) return new Date(ovr.startDate);
+  if (!projectStartDate) return null;
+  const d = new Date(projectStartDate);
+  d.setUTCDate(d.getUTCDate() + (sprintNum - 1) * (sprintLengthWeeks || 2) * 7);
+  return d;
+}
+
+// Map a Date to a sprint number given overrides + project defaults
+function dateToAfasSprint(date, numSprints, overrides, projectStartDate, sprintLengthWeeks) {
+  let result = 1;
+  for (let s = 1; s <= numSprints; s++) {
+    const start = getAfasSprintStart(s, overrides, projectStartDate, sprintLengthWeeks);
+    if (!start || date < start) break;
+    result = s;
+  }
+  return result;
 }
 
 const ChevronIcon = ({ collapsed }) => (
@@ -571,23 +584,37 @@ const ChevronIcon = ({ collapsed }) => (
   </svg>
 );
 
-function AfasTable({ members, weekRange, sprintLength, startWeek, onImport, onClear, importing, importResult, startDate }) {
+function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, importing, importResult }) {
   const fileRef = useRef(null);
   const [collapsed, setCollapsed] = useState(true);
-  const weeks = Array.from({ length: weekRange.end - weekRange.start + 1 }, (_, i) => weekRange.start + i);
-  const sprintRanges = getSprintRanges(weeks, startWeek, sprintLength);
+  const xlsxRef = useRef(null);
 
-  const getHours = (member, week) => {
-    const entry = member.timeEntries?.find((t) => t.weekNumber === week && t.type === "AFAS");
+  useEffect(() => {
+    import("xlsx").then((mod) => { xlsxRef.current = mod.default ?? mod; }).catch(() => {});
+  }, []);
+
+  const sprintOverrides = JSON.parse(project.sprintStartDates || "[]");
+  const sprintLengthWeeks = project.sprintLengthWeeks || 2;
+  const numConfigured = project.budgetWeeks > 0 ? Math.ceil(project.budgetWeeks / sprintLengthWeeks) : 0;
+
+  // Derive sprint numbers from existing AFAS data + configured count
+  const afasSprintNums = [...new Set(
+    members.flatMap((m) => (m.timeEntries || []).filter((t) => t.type === "AFAS").map((t) => t.weekNumber))
+  )].sort((a, b) => a - b);
+  const maxSprint = Math.max(numConfigured, ...afasSprintNums, 1);
+  const sprints = Array.from({ length: maxSprint }, (_, i) => i + 1);
+
+  const getSprintHours = (member, sprintNum) => {
+    const entry = member.timeEntries?.find((t) => t.weekNumber === sprintNum && t.type === "AFAS");
     return entry ? entry.hours : null;
   };
 
   const getMemberTotal = (member) =>
     (member.timeEntries || []).filter((t) => t.type === "AFAS").reduce((s, t) => s + t.hours, 0);
 
-  const getWeekTotal = (week) =>
+  const getSprintTotal = (sprintNum) =>
     members.reduce((sum, m) => {
-      const e = m.timeEntries?.find((t) => t.weekNumber === week && t.type === "AFAS");
+      const e = m.timeEntries?.find((t) => t.weekNumber === sprintNum && t.type === "AFAS");
       return sum + (e ? e.hours : 0);
     }, 0);
 
@@ -596,50 +623,40 @@ function AfasTable({ members, weekRange, sprintLength, startWeek, onImport, onCl
   const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const xlsxMod = await import("xlsx");
-    const XLSX = xlsxMod.default ?? xlsxMod;
+    const XLSX = xlsxRef.current ?? (await import("xlsx").then((m) => m.default ?? m));
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer);
     const ws = wb.Sheets[wb.SheetNames[0]];
     const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
 
-    // Find header row (contains "Werksoort")
     const headerIdx = raw.findIndex((r) => r.some((c) => String(c).trim() === "Werksoort"));
     const dataRows = headerIdx >= 0 ? raw.slice(headerIdx + 1) : raw.slice(1);
-
-    // Column indices from header row
     const header = raw[headerIdx] ?? [];
     const colIdx = (name) => header.findIndex((c) => String(c).trim() === name);
-    const iBoekjaar = colIdx("Boekjaar");
-    const iNaam = colIdx("Naam");
-    const iWeek = colIdx("Week");
-    const iAant = colIdx("Aant.");
-    const iWerk = colIdx("Werksoort");
 
-    const naam    = (r) => String(r[iNaam    >= 0 ? iNaam    : 4] ?? "").trim();
-    const calWeek = (r) => Number(r[iWeek    >= 0 ? iWeek    : 2]);
-    const aant    = (r) => Number(r[iAant    >= 0 ? iAant    : 6]) || 0;
-    const werk    = (r) => String(r[iWerk    >= 0 ? iWerk    : 7] ?? "").trim();
-    const jaar    = (r) => Number(r[iBoekjaar >= 0 ? iBoekjaar : 0]);
+    const iDatum = colIdx("Datum");
+    const iNaam  = colIdx("Naam");
+    const iAant  = colIdx("Aant.");
+    const iWerk  = colIdx("Werksoort");
 
-    // Compute the Monday of the project's start week once
-    let startMonday = null;
-    if (startDate) {
-      const { week: sw, year: sy } = getISOWeekYear(new Date(startDate));
-      startMonday = getMondayOfISOWeek(sy, sw);
-    }
-
-    // Convert AFAS calendar week → relative project week
-    const toProjectWeek = (year, cw) => {
-      if (!startMonday || !year || !cw) return cw;
-      const afasMonday = getMondayOfISOWeek(year, cw);
-      return Math.round((afasMonday - startMonday) / (7 * 24 * 3600 * 1000)) + 1;
+    const naam = (r) => String(r[iNaam >= 0 ? iNaam : 4] ?? "").trim();
+    const aant = (r) => Number(r[iAant >= 0 ? iAant : 6]) || 0;
+    const werk = (r) => String(r[iWerk >= 0 ? iWerk : 7] ?? "").trim();
+    const datum = (r) => {
+      const v = r[iDatum >= 0 ? iDatum : 3];
+      return v ? excelSerialToDate(Number(v)) : null;
     };
 
+    // Determine max possible sprint count for mapping (use budgetWeeks or fall back to 20)
+    const numSprints = Math.max(numConfigured, 20);
+
     const rows = dataRows
-      .filter((r) => werk(r) === "BILL" && naam(r) && calWeek(r) > 0 && aant(r) > 0)
-      .map((r) => ({ naam: naam(r), weekNumber: toProjectWeek(jaar(r), calWeek(r)), hours: aant(r) }))
-      .filter((r) => r.weekNumber >= 1);
+      .filter((r) => werk(r) === "BILL" && naam(r) && datum(r) && aant(r) > 0)
+      .map((r) => ({
+        naam: naam(r),
+        weekNumber: dateToAfasSprint(datum(r), numSprints, sprintOverrides, project.startDate, sprintLengthWeeks),
+        hours: aant(r),
+      }));
 
     e.target.value = "";
     onImport(rows);
@@ -669,106 +686,130 @@ function AfasTable({ members, weekRange, sprintLength, startWeek, onImport, onCl
           <button
             onClick={() => fileRef.current?.click()}
             disabled={importing}
-            className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-95 text-white transition-all duration-150 disabled:opacity-50"
+            className={`flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-95 text-white transition-all duration-150 ${importing ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
           >
             <UploadIcon /> AFAS importeren
           </button>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={handleFile} />
         </div>
       </div>
 
       {!collapsed && (
         <>
-        {/* Import result banner */}
-        {importResult && (
-          <div className={`mx-4 mt-3 px-4 py-2.5 rounded-xl text-xs font-medium flex items-start gap-2 ${
-            importResult.unmatched.length > 0 ? "bg-amber-50 text-amber-800" : "bg-teal-50 text-teal-800"
-          }`}>
-            <div className="flex-1">
-              <span className="font-semibold">{importResult.created} regels geïmporteerd</span>
-              {importResult.matched.length > 0 && (
-                <span className="ml-2 text-teal-700">✓ {importResult.matched.join(", ")}</span>
-              )}
-              {importResult.unmatched.length > 0 && (
-                <span className="ml-2 text-amber-700">⚠ Niet herkend: {importResult.unmatched.join(", ")}</span>
-              )}
+          {/* Import result banner */}
+          {importResult && (
+            <div className={`mx-4 mt-3 px-4 py-2.5 rounded-xl text-xs font-medium flex items-start gap-2 ${
+              importResult.unmatched.length > 0 ? "bg-amber-50 text-amber-800" : "bg-teal-50 text-teal-800"
+            }`}>
+              <div className="flex-1">
+                <span className="font-semibold">{importResult.created} regels geïmporteerd</span>
+                {importResult.matched.length > 0 && (
+                  <span className="ml-2 text-teal-700">✓ {importResult.matched.join(", ")}</span>
+                )}
+                {importResult.unmatched.length > 0 && (
+                  <span className="ml-2 text-amber-700">⚠ Niet herkend: {importResult.unmatched.join(", ")}</span>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {!hasAnyData && !importing ? (
-          <div className="px-6 py-10 text-center text-gray-400 text-sm">
-            Nog geen AFAS data geïmporteerd. Klik op <strong>AFAS importeren</strong> om een export te uploaden.
+          {/* Sprint date hint */}
+          <div className="mx-4 mt-3 mb-1 px-4 py-2.5 rounded-xl bg-gray-50 text-xs text-gray-500 flex items-start gap-2">
+            <span className="shrink-0">📅</span>
+            <span>
+              Pas de startdatum van een sprint aan als die sprint later begon dan gepland.
+              Uren worden op basis van de exacte datum uit AFAS aan de juiste sprint toegewezen.
+            </span>
           </div>
-        ) : (
+
           <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-teal-50/40">
-                <th className="sticky left-0 bg-teal-50/40 z-10 min-w-[180px]" />
-                {sprintRanges.map((s) => (
-                  <th key={s.sprint} colSpan={s.colSpan}
-                    className="px-2 py-2 text-center text-xs font-semibold text-teal-700 border-l border-gray-200 first:border-l-0">
-                    Sprint {s.sprint}
-                  </th>
-                ))}
-                <th className="min-w-[100px] bg-teal-50/60" />
-              </tr>
-              <tr className="bg-gray-50/80">
-                <th className="text-left px-4 py-2.5 font-medium text-gray-600 sticky left-0 bg-gray-50/80 z-10 min-w-[180px]">Medewerker</th>
-                {weeks.map((w) => (
-                  <th key={w} className="px-2 py-2.5 font-medium text-gray-500 text-center min-w-[80px]">Wk {w}</th>
-                ))}
-                <th className="px-4 py-2.5 font-semibold text-gray-700 text-center min-w-[100px] bg-teal-50/60">Totaal</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {members.map((m) => (
-                <tr key={m.id} className="hover:bg-teal-50/20">
-                  <td className="px-4 py-2.5 sticky left-0 bg-white z-10 border-r border-gray-50">
-                    <div className="font-medium text-gray-900 text-sm">{m.person.name}</div>
-                    <div className="text-xs text-gray-400">{m.person.role}</div>
-                  </td>
-                  {weeks.map((w) => {
-                    const h = getHours(m, w);
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-teal-50/40">
+                  <th className="sticky left-0 bg-teal-50/40 z-10 min-w-[180px]" />
+                  {sprints.map((s) => {
+                    const startDate = getAfasSprintStart(s, sprintOverrides, project.startDate, sprintLengthWeeks);
+                    const isOverridden = sprintOverrides.some((o) => o.sprint === s);
                     return (
-                      <td key={w} className="px-2 py-2.5 text-center">
-                        {h != null && h > 0 ? (
-                          <span className="text-sm font-medium text-teal-700">{h}</span>
-                        ) : (
-                          <span className="text-gray-200">—</span>
-                        )}
-                      </td>
+                      <th key={s} className="px-2 py-2 text-center text-xs font-semibold text-teal-700 border-l border-gray-200 first:border-l-0 min-w-[120px]">
+                        <div>Sprint {s}</div>
+                        <input
+                          type="date"
+                          value={startDate ? toDateInput(startDate) : ""}
+                          onChange={(e) => onUpdateSprintDate(s, e.target.value)}
+                          className={`mt-1 w-full text-center text-[10px] font-normal border rounded-md px-1 py-0.5 outline-none focus:ring-1 focus:ring-teal-400 transition ${
+                            isOverridden
+                              ? "border-teal-300 text-teal-700 bg-teal-50"
+                              : "border-gray-200 text-gray-400 bg-white"
+                          }`}
+                          title={isOverridden ? "Aangepaste startdatum" : "Berekende startdatum (klik om aan te passen)"}
+                        />
+                      </th>
                     );
                   })}
-                  <td className="px-4 py-2.5 text-center bg-teal-50/30">
-                    <div className="font-semibold text-teal-700">{getMemberTotal(m) || "—"}{getMemberTotal(m) > 0 ? "u" : ""}</div>
-                  </td>
+                  <th className="min-w-[90px] bg-teal-50/60" />
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="bg-gray-50/80 border-t-2 border-gray-200">
-                <td className="px-4 py-3 font-semibold text-gray-700 sticky left-0 bg-gray-50/80 z-10">Totaal</td>
-                {weeks.map((w) => {
-                  const t = getWeekTotal(w);
-                  return (
-                    <td key={w} className="px-2 py-2 text-center">
-                      <span className={`font-semibold ${t > 0 ? "text-teal-700" : "text-gray-200"}`}>{t > 0 ? t : "—"}</span>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {!hasAnyData && !importing ? (
+                  <tr>
+                    <td colSpan={sprints.length + 2} className="px-6 py-10 text-center text-gray-400">
+                      Nog geen AFAS data. Klik op <strong>AFAS importeren</strong> om een export te uploaden.
                     </td>
-                  );
-                })}
-                <td className="px-4 py-2 text-center bg-teal-50/50">
-                  <div className="font-bold text-teal-700">
-                    {members.reduce((s, m) => s + getMemberTotal(m), 0)}u
-                  </div>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
-      </>
+                  </tr>
+                ) : (
+                  members.map((m) => (
+                    <tr key={m.id} className="hover:bg-teal-50/20">
+                      <td className="px-4 py-2.5 sticky left-0 bg-white z-10 border-r border-gray-50">
+                        <div className="font-medium text-gray-900 text-sm">{m.person.name}</div>
+                        <div className="text-xs text-gray-400">{m.person.role}</div>
+                      </td>
+                      {sprints.map((s) => {
+                        const h = getSprintHours(m, s);
+                        return (
+                          <td key={s} className="px-3 py-2.5 text-center border-l border-gray-50">
+                            {h != null && h > 0 ? (
+                              <span className="text-sm font-medium text-teal-700">{h}u</span>
+                            ) : (
+                              <span className="text-gray-200">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="px-4 py-2.5 text-center bg-teal-50/30">
+                        <div className="font-semibold text-teal-700">
+                          {getMemberTotal(m) > 0 ? `${getMemberTotal(m)}u` : "—"}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              {hasAnyData && (
+                <tfoot>
+                  <tr className="bg-gray-50/80 border-t-2 border-gray-200">
+                    <td className="px-4 py-3 font-semibold text-gray-700 sticky left-0 bg-gray-50/80 z-10">Totaal</td>
+                    {sprints.map((s) => {
+                      const t = getSprintTotal(s);
+                      return (
+                        <td key={s} className="px-3 py-2 text-center border-l border-gray-100">
+                          <span className={`font-semibold ${t > 0 ? "text-teal-700" : "text-gray-200"}`}>
+                            {t > 0 ? `${t}u` : "—"}
+                          </span>
+                        </td>
+                      );
+                    })}
+                    <td className="px-4 py-2 text-center bg-teal-50/50">
+                      <div className="font-bold text-teal-700">
+                        {members.reduce((s, m) => s + getMemberTotal(m), 0)}u
+                      </div>
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
@@ -822,6 +863,15 @@ export default function ProjectDetailPage({ params }) {
     setAfasResult(null);
     load();
   }, [id]);
+
+  const handleUpdateSprintDate = useCallback(async (sprintNum, dateStr) => {
+    const current = JSON.parse(project.sprintStartDates || "[]");
+    const updated = current.filter((s) => s.sprint !== sprintNum);
+    if (dateStr) updated.push({ sprint: sprintNum, startDate: dateStr });
+    updated.sort((a, b) => a.sprint - b.sprint);
+    await updateProject({ ...project, sprintStartDates: JSON.stringify(updated) });
+    load();
+  }, [project]);
 
   const handleSetHours = useCallback(async (member, week, value, type) => {
     const hours = value === "" ? 0 : parseFloat(value);
@@ -1005,14 +1055,12 @@ export default function ProjectDetailPage({ params }) {
                     <div className="animate-fade-in-up delay-300">
                       <AfasTable
                         members={members}
-                        weekRange={weekRange}
-                        sprintLength={sprintLength}
-                        startWeek={weekRange.start}
+                        project={project}
                         onImport={handleAfasImport}
                         onClear={handleAfasClear}
+                        onUpdateSprintDate={handleUpdateSprintDate}
                         importing={importingAfas}
                         importResult={afasResult}
-                        startDate={project.startDate}
                       />
                     </div>
                   </div>
