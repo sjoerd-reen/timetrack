@@ -636,6 +636,15 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
       return sum + (e ? e.hours : 0);
     }, 0);
 
+  const getSprintCost = (sprintNum) =>
+    members.reduce((sum, m) => {
+      const e = m.timeEntries?.find((t) => t.weekNumber === sprintNum && t.type === "AFAS");
+      return sum + (e ? e.hours * m.hourlyRate : 0);
+    }, 0);
+
+  const getTotalCost = () =>
+    members.reduce((sum, m) => sum + getMemberTotal(m) * m.hourlyRate, 0);
+
   const hasAnyData = members.some((m) => getMemberTotal(m) > 0);
 
   const handleFile = async (e) => {
@@ -839,11 +848,15 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
                     <td className="px-4 py-3 font-semibold text-gray-700 sticky left-0 bg-gray-50/80 z-10">Totaal</td>
                     {sprints.map((s) => {
                       const t = getSprintTotal(s);
+                      const c = getSprintCost(s);
                       return (
                         <td key={s} className="px-3 py-2 text-center border-l border-gray-100">
-                          <span className={`font-semibold ${t > 0 ? "text-teal-700" : "text-gray-200"}`}>
+                          <div className={`font-semibold ${t > 0 ? "text-teal-700" : "text-gray-200"}`}>
                             {t > 0 ? `${t}u` : "—"}
-                          </span>
+                          </div>
+                          {c > 0 && (
+                            <div className="text-[11px] font-medium text-emerald-600 mt-0.5">{fmtEur(c)}</div>
+                          )}
                         </td>
                       );
                     })}
@@ -851,6 +864,9 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
                       <div className="font-bold text-teal-700">
                         {members.reduce((s, m) => s + getMemberTotal(m), 0)}u
                       </div>
+                      {getTotalCost() > 0 && (
+                        <div className="text-[11px] font-semibold text-emerald-600 mt-0.5">{fmtEur(getTotalCost())}</div>
+                      )}
                     </td>
                   </tr>
                 </tfoot>
