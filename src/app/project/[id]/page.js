@@ -32,26 +32,6 @@ const ChartIcon = () => (
 );
 
 // ═══════════════════════════════════════════════════════════════
-// SPRINT HELPER
-// ═══════════════════════════════════════════════════════════════
-function getSprintForWeek(week, startWeek, sprintLength) {
-  return Math.ceil((week - startWeek + 1) / sprintLength);
-}
-
-function getSprintRanges(weeks, startWeek, sprintLength) {
-  const sprints = [];
-  let currentSprint = null;
-  weeks.forEach((w, idx) => {
-    const sNum = getSprintForWeek(w, startWeek, sprintLength);
-    if (!currentSprint || currentSprint.sprint !== sNum) {
-      if (currentSprint) currentSprint.colSpan = idx - currentSprint.startIdx;
-      currentSprint = { sprint: sNum, startIdx: idx, colSpan: 1 };
-      sprints.push(currentSprint);
-    }
-  });
-  if (currentSprint) currentSprint.colSpan = weeks.length - currentSprint.startIdx;
-  return sprints;
-}
 
 // ═══════════════════════════════════════════════════════════════
 // BUDGET PROGRESS COMPONENT
@@ -150,18 +130,12 @@ function BudgetProgress({ project, members }) {
 // PROJECT STATISTICS VIEW
 // ═══════════════════════════════════════════════════════════════
 function ProjectStats({ project, members }) {
-  const sprintLen = project.sprintLengthWeeks || 2;
-
-  // Gather all weeks
-  const allWeeks = [...new Set(members.flatMap((m) => (m.timeEntries || []).map((t) => t.weekNumber)))].sort((a, b) => a - b);
-  const startWeek = allWeeks.length > 0 ? allWeeks[0] : 1;
-
   // ── Sprint data: planning vs realisatie per sprint ──
+  // weekNumber IS the sprint number for Planning/Realisatie entries
   const sprintMap = {};
   members.forEach((m) => {
-    (m.timeEntries || []).forEach((t) => {
-      const s = getSprintForWeek(t.weekNumber, startWeek, sprintLen);
-      const key = `Sprint ${s}`;
+    (m.timeEntries || []).filter((t) => t.type === "Planning" || t.type === "Realisatie").forEach((t) => {
+      const key = `Sprint ${t.weekNumber}`;
       if (!sprintMap[key]) sprintMap[key] = { sprint: key, Planning: 0, Realisatie: 0, PlanningKosten: 0, RealisatieKosten: 0 };
       sprintMap[key][t.type] += t.hours;
       sprintMap[key][`${t.type}Kosten`] += t.hours * m.hourlyRate;
@@ -476,40 +450,32 @@ function ProjectStats({ project, members }) {
 // ═══════════════════════════════════════════════════════════════
 // REUSABLE HOURS TABLE COMPONENT (with sprint headers)
 // ═══════════════════════════════════════════════════════════════
-function HoursTable({ title, type, members, weekRange, sprintLength, startWeek, onSetHours, saving }) {
+function HoursTable({ title, type, members, numSprints, onSetHours, saving }) {
   const cellRefs = useRef({});
-  const weeks = Array.from({ length: weekRange.end - weekRange.start + 1 }, (_, i) => weekRange.start + i);
-  const sprintRanges = getSprintRanges(weeks, startWeek, sprintLength);
+  const sprints = Array.from({ length: numSprints }, (_, i) => i + 1);
 
-  const getHours = (member, week) => {
-    const entry = member.timeEntries?.find((t) => t.weekNumber === week && t.type === type);
+  const getHours = (member, sprint) => {
+    const entry = member.timeEntries?.find((t) => t.weekNumber === sprint && t.type === type);
     return entry ? entry.hours : "";
   };
 
-  const getCellCost = (member, week) => {
-    const entry = member.timeEntries?.find((t) => t.weekNumber === week && t.type === type);
-    return entry ? entry.hours * member.hourlyRate : 0;
-  };
+  const getSprintCost = (sprint) =>
+    members.reduce((sum, m) => {
+      const e = m.timeEntries?.find((t) => t.weekNumber === sprint && t.type === type);
+      return sum + (e ? e.hours * m.hourlyRate : 0);
+    }, 0);
+
+  const getSprintHours = (sprint) =>
+    members.reduce((sum, m) => {
+      const e = m.timeEntries?.find((t) => t.weekNumber === sprint && t.type === type);
+      return sum + (e ? e.hours : 0);
+    }, 0);
 
   const getMemberTotalHours = (member) =>
     (member.timeEntries || []).filter((t) => t.type === type).reduce((s, t) => s + t.hours, 0);
 
   const getMemberTotalCost = (member) =>
     (member.timeEntries || []).filter((t) => t.type === type).reduce((s, t) => s + t.hours * member.hourlyRate, 0);
-
-  const getWeekTotal = (week) =>
-    members.reduce((sum, m) => {
-      const entry = m.timeEntries?.find((t) => t.weekNumber === week && t.type === type);
-      return sum + (entry ? entry.hours : 0);
-    }, 0);
-
-  const getWeekTotalCost = (week) =>
-    members.reduce((sum, m) => sum + getCellCost(m, week), 0);
-
-  const getSprintTotalCost = (s) =>
-    members.reduce((sum, m) =>
-      sum + weeks.slice(s.startIdx, s.startIdx + s.colSpan).reduce((acc, w) => acc + getCellCost(m, w), 0),
-    0);
 
   const handleKeyDown = (e, rowIdx, colIdx) => {
     let nextRow = rowIdx, nextCol = colIdx;
@@ -519,86 +485,78 @@ function HoursTable({ title, type, members, weekRange, sprintLength, startWeek, 
     else if (e.key === "ArrowUp") { e.preventDefault(); nextRow--; }
     else return;
     const refKey = `${type}-${nextRow}-${nextCol}`;
-    if (nextRow >= 0 && nextRow < members.length && nextCol >= 0 && nextCol < weeks.length) {
+    if (nextRow >= 0 && nextRow < members.length && nextCol >= 0 && nextCol < sprints.length) {
       cellRefs.current[refKey]?.focus();
       cellRefs.current[refKey]?.select();
     }
   };
 
   const badgeBg = type === "Planning" ? "bg-amber-100 text-amber-700" : "bg-indigo-100 text-indigo-700";
+  const headerBg = type === "Planning" ? "bg-amber-50/40" : "bg-indigo-50/40";
+  const totalBg = type === "Planning" ? "bg-amber-50/50" : "bg-indigo-50/50";
+  const accentColor = type === "Planning" ? "text-amber-600" : "text-indigo-600";
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50 flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <h2 className="font-semibold text-gray-900">{title}</h2>
-          <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${badgeBg}`}>{type}</span>
-          {saving && <span className="text-xs text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full animate-pulse">Opslaan...</span>}
-        </div>
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-50">
+        <h2 className="font-semibold text-gray-900">{title}</h2>
+        <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${badgeBg}`}>{type}</span>
+        {saving && <span className="text-xs text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full animate-pulse">Opslaan...</span>}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            {/* Sprint header row */}
-            <tr className="bg-gray-100/60">
-              <th className="sticky left-0 bg-gray-100/60 z-10 min-w-[180px]"></th>
-              {sprintRanges.map((s) => {
-                const cost = getSprintTotalCost(s);
+            <tr className={headerBg}>
+              <th className={`sticky left-0 ${headerBg} z-10 text-left px-4 py-2.5 font-medium text-gray-600 min-w-[180px]`}>Medewerker</th>
+              {sprints.map((s) => {
+                const cost = getSprintCost(s);
                 return (
-                  <th key={s.sprint} colSpan={s.colSpan}
-                    className="px-2 py-2 text-center text-xs font-semibold text-indigo-600 border-l border-gray-200 first:border-l-0">
-                    Sprint {s.sprint}
-                    {cost > 0 && (
-                      <div className="text-[10px] font-medium text-emerald-600 mt-0.5">{fmtEur(cost)}</div>
-                    )}
+                  <th key={s} className={`px-2 py-2 text-center text-xs font-semibold ${accentColor} border-l border-gray-200 min-w-[110px]`}>
+                    Sprint {s}
+                    {cost > 0 && <div className="text-[10px] font-medium text-emerald-600 mt-0.5">{fmtEur(cost)}</div>}
                   </th>
                 );
               })}
-              <th className={`min-w-[100px] ${type === "Planning" ? "bg-amber-50/50" : "bg-indigo-50/50"}`}></th>
-            </tr>
-            {/* Week header row */}
-            <tr className="bg-gray-50/80">
-              <th className="text-left px-4 py-2.5 font-medium text-gray-600 sticky left-0 bg-gray-50/80 z-10 min-w-[180px]">Medewerker</th>
-              {weeks.map((w) => (
-                <th key={w} className="px-2 py-2.5 font-medium text-gray-500 text-center min-w-[80px]">Wk {w}</th>
-              ))}
-              <th className={`px-4 py-2.5 font-semibold text-gray-700 text-center min-w-[100px] ${type === "Planning" ? "bg-amber-50/50" : "bg-indigo-50/50"}`}>Totaal</th>
+              <th className={`px-4 py-2.5 font-semibold text-gray-700 text-center min-w-[110px] ${totalBg}`}>Totaal</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {members.map((m, rowIdx) => (
-              <tr key={m.id} className="hover:bg-blue-50/30">
-                <td className="px-4 py-2 sticky left-0 bg-white z-10 border-r border-gray-50">
+              <tr key={m.id} className="hover:bg-gray-50/40 transition-colors duration-100">
+                <td className="px-4 py-2.5 sticky left-0 bg-white z-10 border-r border-gray-50">
                   <div className="font-medium text-gray-900 text-sm">{m.person.name}</div>
-                  <div className="text-xs text-gray-400">{fmtEur(m.hourlyRate)}/u</div>
+                  <div className="text-xs text-gray-400">{m.person.role} · {fmtEur(m.hourlyRate)}/u</div>
                 </td>
-                {weeks.map((w, colIdx) => {
-                  const cost = getCellCost(m, w);
+                {sprints.map((sprint, colIdx) => {
                   const refKey = `${type}-${rowIdx}-${colIdx}`;
+                  const val = getHours(m, sprint);
+                  const cost = val !== "" ? Number(val) * m.hourlyRate : 0;
                   return (
-                    <td key={w} className="px-1 py-1 text-center">
+                    <td key={sprint} className="px-1 py-1.5 text-center border-l border-gray-50">
                       <input
                         ref={(el) => { cellRefs.current[refKey] = el; }}
                         type="number"
-                        defaultValue={getHours(m, w)}
-                        onBlur={(e) => onSetHours(m, w, e.target.value, type)}
+                        defaultValue={val}
+                        onBlur={(e) => onSetHours(m, sprint, e.target.value, type)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") e.target.blur();
                           handleKeyDown(e, rowIdx, colIdx);
                         }}
                         onFocus={(e) => e.target.select()}
-                        className="w-16 text-center border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 rounded-lg py-1.5 text-sm outline-none transition bg-transparent"
-                        min={0} max={80} step={0.5}
+                        className={`w-16 text-center border border-transparent hover:border-gray-200 rounded-lg py-1.5 text-sm outline-none transition focus:ring-2 bg-transparent ${
+                          type === "Planning"
+                            ? "focus:ring-amber-200 focus:border-amber-300"
+                            : "focus:ring-indigo-200 focus:border-indigo-300"
+                        }`}
+                        min={0} step={0.5}
                         placeholder="—"
                       />
-                      {cost > 0 && (
-                        <div className="text-[10px] text-emerald-600 font-medium -mt-0.5 pb-0.5">{fmtEur(cost)}</div>
-                      )}
+                      {cost > 0 && <div className="text-[10px] text-emerald-600 font-medium">{fmtEur(cost)}</div>}
                     </td>
                   );
                 })}
-                <td className={`px-4 py-2 text-center ${type === "Planning" ? "bg-amber-50/30" : "bg-indigo-50/30"}`}>
-                  <div className={`font-semibold ${type === "Planning" ? "text-amber-600" : "text-indigo-600"}`}>{getMemberTotalHours(m)}u</div>
+                <td className={`px-4 py-2.5 text-center ${totalBg}`}>
+                  <div className={`font-semibold ${accentColor}`}>{getMemberTotalHours(m)}u</div>
                   {getMemberTotalCost(m) > 0 && (
                     <div className="text-[11px] text-emerald-600 font-semibold">{fmtEur(getMemberTotalCost(m))}</div>
                   )}
@@ -609,29 +567,29 @@ function HoursTable({ title, type, members, weekRange, sprintLength, startWeek, 
           <tfoot>
             <tr className="bg-gray-50/80 border-t-2 border-gray-200">
               <td className="px-4 py-3 font-semibold text-gray-700 sticky left-0 bg-gray-50/80 z-10">Totaal</td>
-              {weeks.map((w) => {
-                const wHours = getWeekTotal(w);
-                const wCost = getWeekTotalCost(w);
+              {sprints.map((s) => {
+                const h = getSprintHours(s);
+                const c = getSprintCost(s);
                 return (
-                  <td key={w} className="px-2 py-2 text-center">
-                    <div className="font-semibold text-gray-700">{wHours || ""}</div>
-                    {wCost > 0 && <div className="text-[10px] text-emerald-600 font-semibold">{fmtEur(wCost)}</div>}
+                  <td key={s} className="px-2 py-2 text-center border-l border-gray-100">
+                    <div className={`font-semibold ${h > 0 ? accentColor : "text-gray-200"}`}>{h > 0 ? `${h}u` : "—"}</div>
+                    {c > 0 && <div className="text-[10px] text-emerald-600 font-semibold">{fmtEur(c)}</div>}
                   </td>
                 );
               })}
-              <td className={`px-4 py-2 text-center ${type === "Planning" ? "bg-amber-50/50" : "bg-indigo-50/50"}`}>
-                <div className={`font-bold ${type === "Planning" ? "text-amber-700" : "text-indigo-700"}`}>
-                  {members.reduce((s, m) => s + getMemberTotalHours(m), 0)}u
-                </div>
-                <div className="text-xs text-emerald-600 font-bold">
-                  {fmtEur(members.reduce((s, m) => s + getMemberTotalCost(m), 0))}
-                </div>
+              <td className={`px-4 py-2 text-center ${totalBg}`}>
+                <div className={`font-bold ${accentColor}`}>{members.reduce((s, m) => s + getMemberTotalHours(m), 0)}u</div>
+                {members.reduce((s, m) => s + getMemberTotalCost(m), 0) > 0 && (
+                  <div className="text-[11px] text-emerald-600 font-bold">
+                    {fmtEur(members.reduce((s, m) => s + getMemberTotalCost(m), 0))}
+                  </div>
+                )}
               </td>
             </tr>
           </tfoot>
         </table>
       </div>
-      <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400">
+      <div className="px-6 py-2.5 border-t border-gray-50 text-xs text-gray-400">
         Tip: gebruik pijltjestoetsen, Tab en Enter om snel door de cellen te navigeren. Wijzigingen worden automatisch opgeslagen.
       </div>
     </div>
@@ -1018,7 +976,6 @@ export default function ProjectDetailPage({ params }) {
   const [showEditProject, setShowEditProject] = useState(false);
   const [newMember, setNewMember] = useState({ personId: "", hourlyRate: 100 });
   const [newPerson, setNewPerson] = useState({ name: "", role: "" });
-  const [weekRange, setWeekRange] = useState({ start: 1, end: 12 });
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState("hours"); // "hours" | "stats"
   const [editForm, setEditForm] = useState({});
@@ -1029,9 +986,6 @@ export default function ProjectDetailPage({ params }) {
     const [proj, ppl] = await Promise.all([fetchProject(id), fetchPeople()]);
     setProject(proj);
     setPeople(ppl);
-    if (proj.budgetWeeks > 0) {
-      setWeekRange((prev) => ({ ...prev, end: proj.budgetWeeks }));
-    }
     setLoading(false);
   };
   useEffect(() => { load(); }, [id]);
@@ -1109,6 +1063,11 @@ export default function ProjectDetailPage({ params }) {
   const members = project.members || [];
   const availablePeople = people.filter((p) => !members.some((m) => m.personId === p.id));
   const sprintLength = project.sprintLengthWeeks || 2;
+  const configuredSprints = project.budgetWeeks > 0 ? Math.ceil(project.budgetWeeks / sprintLength) : 0;
+  const existingSprintNums = members.flatMap((m) =>
+    (m.timeEntries || []).filter((t) => t.type === "Planning" || t.type === "Realisatie").map((t) => t.weekNumber)
+  );
+  const numSprints = Math.max(configuredSprints, ...existingSprintNums, 4);
 
   const handleAddMember = async () => {
     if (!newMember.personId) return;
@@ -1181,17 +1140,6 @@ export default function ProjectDetailPage({ params }) {
                   <ChartIcon /> Statistieken
                 </button>
               </div>
-              {/* Week range (only in hours view) */}
-              {activeView === "hours" && (
-                <div className="flex items-center gap-2 text-sm bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm animate-fade-in">
-                  <span className="text-gray-500 font-medium">Weken:</span>
-                  <input type="number" value={weekRange.start} onChange={(e) => setWeekRange({ ...weekRange, start: parseInt(e.target.value) || 1 })}
-                    className="w-14 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center outline-none focus:ring-2 focus:ring-indigo-500" min={1} max={53} />
-                  <span className="text-gray-400">—</span>
-                  <input type="number" value={weekRange.end} onChange={(e) => setWeekRange({ ...weekRange, end: parseInt(e.target.value) || 12 })}
-                    className="w-14 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center outline-none focus:ring-2 focus:ring-indigo-500" min={1} max={53} />
-                </div>
-              )}
             </div>
           </div>
 
@@ -1242,12 +1190,12 @@ export default function ProjectDetailPage({ params }) {
                 {members.length > 0 && (
                   <div className="space-y-6">
                     <div className="animate-fade-in-up delay-100">
-                      <HoursTable title="Planning" type="Planning" members={members} weekRange={weekRange}
-                        sprintLength={sprintLength} startWeek={weekRange.start} onSetHours={handleSetHours} saving={saving} />
+                      <HoursTable title="Planning" type="Planning" members={members} numSprints={numSprints}
+                        onSetHours={handleSetHours} saving={saving} />
                     </div>
                     <div className="animate-fade-in-up delay-200">
-                      <HoursTable title="Realisatie" type="Realisatie" members={members} weekRange={weekRange}
-                        sprintLength={sprintLength} startWeek={weekRange.start} onSetHours={handleSetHours} saving={saving} />
+                      <HoursTable title="Realisatie" type="Realisatie" members={members} numSprints={numSprints}
+                        onSetHours={handleSetHours} saving={saving} />
                     </div>
                     <div className="animate-fade-in-up delay-300">
                       <AfasTable
