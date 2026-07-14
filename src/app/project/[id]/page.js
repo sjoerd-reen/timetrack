@@ -205,6 +205,32 @@ function ProjectStats({ project, members }) {
       Nauwkeurigheid: Math.round((s.Realisatie / s.Planning) * 100),
     }));
 
+  // ── Sprint budget overzicht (AFAS data) ──
+  const sprintOverrides = JSON.parse(project.sprintStartDates || "[]");
+  const numConfigured = project.budgetWeeks > 0 ? Math.ceil(sprintLen / 1) : 0;
+  const afasSprintNums = [...new Set(
+    members.flatMap((m) => (m.timeEntries || []).filter((t) => t.type === "AFAS").map((t) => t.weekNumber))
+  )];
+  const maxAfasSprint = Math.max(...afasSprintNums, 0);
+  const hasBudgetConfig = sprintOverrides.some((o) => o.budgetAmount != null);
+  const sprintBudgetRows = maxAfasSprint > 0 ? (() => {
+    let runningBudget = project.budget || 0;
+    let cumCost = 0;
+    return Array.from({ length: maxAfasSprint }, (_, i) => i + 1).map((s) => {
+      const cost = members.reduce((sum, m) => {
+        const e = m.timeEntries?.find((t) => t.weekNumber === s && t.type === "AFAS");
+        return sum + (e ? e.hours * m.hourlyRate : 0);
+      }, 0);
+      const ovr = sprintOverrides.find((o) => o.sprint === s);
+      const budget = ovr?.budgetAmount ?? null;
+      const meerwerk = budget != null ? cost - budget : null;
+      if (meerwerk != null && meerwerk > 0) runningBudget += meerwerk;
+      cumCost += cost;
+      const pct = runningBudget > 0 ? Math.min(100, (cost / runningBudget) * 100) : 0;
+      return { sprint: s, cost, budget, meerwerk, pct, snapshotBudget: runningBudget, cumCost };
+    });
+  })() : [];
+
   // ── KPIs ──
   const totalRealisatie = members.reduce((sum, m) =>
     sum + (m.timeEntries || []).filter((t) => t.type === "Realisatie").reduce((s, t) => s + t.hours, 0), 0);
@@ -214,8 +240,85 @@ function ProjectStats({ project, members }) {
     sum + (m.timeEntries || []).filter((t) => t.type === "Realisatie").reduce((s, t) => s + t.hours * m.hourlyRate, 0), 0);
   const planningAccuracy = totalPlanning > 0 ? ((totalRealisatie / totalPlanning) * 100).toFixed(0) : "—";
 
+  const totaalCumCost = sprintBudgetRows.reduce((s, r) => s + r.cost, 0);
+  const totaalMeerwerk = sprintBudgetRows.reduce((s, r) => s + (r.meerwerk ?? 0), 0);
+  const lastRow = sprintBudgetRows[sprintBudgetRows.length - 1];
+  const eindBudget = lastRow?.snapshotBudget ?? project.budget ?? 0;
+  const totaalPct = eindBudget > 0 ? Math.min(100, (totaalCumCost / eindBudget) * 100) : 0;
+
   return (
     <div className="space-y-6">
+      {/* Sprint Budget Overzicht */}
+      {sprintBudgetRows.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden animate-fade-in-up">
+          <div className="px-6 py-4 border-b border-gray-50">
+            <h3 className="font-semibold text-gray-900">Sprint Budget Overzicht</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Op basis van AFAS nacalculatie data</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-teal-600 text-white">
+                  <th className="px-5 py-3 text-left font-medium">Sprint</th>
+                  <th className="px-5 py-3 text-right font-medium">Gerealiseerde kosten</th>
+                  {hasBudgetConfig && <th className="px-5 py-3 text-right font-medium">Budget sprint</th>}
+                  {hasBudgetConfig && <th className="px-5 py-3 text-right font-medium">Meerwerk</th>}
+                  {hasBudgetConfig && <th className="px-5 py-3 text-right font-medium">Huidig totaalbudget</th>}
+                  <th className="px-5 py-3 text-left font-medium min-w-[180px]">Verbruikt</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {sprintBudgetRows.map((row, i) => (
+                  <tr key={row.sprint} className={i % 2 === 1 ? "bg-gray-50/60" : ""}>
+                    <td className="px-5 py-3 font-medium text-gray-900">Sprint {row.sprint}</td>
+                    <td className="px-5 py-3 text-right text-gray-700">{row.cost > 0 ? fmtEur(row.cost) : <span className="text-gray-300">—</span>}</td>
+                    {hasBudgetConfig && <td className="px-5 py-3 text-right text-gray-500">{row.budget != null ? fmtEur(row.budget) : <span className="text-gray-300">—</span>}</td>}
+                    {hasBudgetConfig && (
+                      <td className="px-5 py-3 text-right">
+                        {row.meerwerk == null ? <span className="text-gray-300">—</span>
+                          : row.meerwerk > 0 ? <span className="font-medium text-orange-500">+{fmtEur(row.meerwerk)}</span>
+                          : row.meerwerk < 0 ? <span className="font-medium text-emerald-600">-{fmtEur(Math.abs(row.meerwerk))}</span>
+                          : <span className="text-gray-400">—</span>}
+                      </td>
+                    )}
+                    {hasBudgetConfig && <td className="px-5 py-3 text-right text-gray-700">{fmtEur(row.snapshotBudget)}</td>}
+                    <td className="px-5 py-3">
+                      {row.cost > 0 ? (
+                        <>
+                          <div className="w-40 h-1.5 rounded-full bg-gray-100 overflow-hidden mb-1">
+                            <div className="h-full rounded-full bg-teal-600 transition-all" style={{ width: `${row.pct}%` }} />
+                          </div>
+                          <div className="text-xs text-gray-400">{row.pct.toFixed(1)}% van budget</div>
+                        </>
+                      ) : <span className="text-gray-300">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-teal-600 text-white">
+                  <td className="px-5 py-3 font-semibold">Totaal</td>
+                  <td className="px-5 py-3 text-right font-semibold">{fmtEur(totaalCumCost)}</td>
+                  {hasBudgetConfig && <td className="px-5 py-3 text-right font-semibold">{fmtEur(sprintBudgetRows.reduce((s, r) => s + (r.budget ?? 0), 0))}</td>}
+                  {hasBudgetConfig && (
+                    <td className="px-5 py-3 text-right font-semibold">
+                      {totaalMeerwerk > 0 ? `+${fmtEur(totaalMeerwerk)}` : totaalMeerwerk < 0 ? `-${fmtEur(Math.abs(totaalMeerwerk))}` : "—"}
+                    </td>
+                  )}
+                  {hasBudgetConfig && <td className="px-5 py-3 text-right font-semibold">{fmtEur(eindBudget)}</td>}
+                  <td className="px-5 py-3">
+                    <div className="w-40 h-1.5 rounded-full overflow-hidden mb-1" style={{ background: "rgba(255,255,255,0.25)" }}>
+                      <div className="h-full rounded-full bg-white" style={{ width: `${totaalPct}%` }} />
+                    </div>
+                    <div className="text-xs text-white/75">{totaalPct.toFixed(1)}% van budget</div>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
@@ -605,6 +708,7 @@ const ChevronIcon = ({ collapsed }) => (
 function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, importing, importResult }) {
   const fileRef = useRef(null);
   const [collapsed, setCollapsed] = useState(true);
+  const [budgetEdits, setBudgetEdits] = useState({});
   const xlsxRef = useRef(null);
 
   useEffect(() => {
@@ -759,10 +863,12 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
                     const ovr = sprintOverrides.find((o) => o.sprint === s);
                     const startOverridden = !!ovr?.startDate;
                     const endOverridden = !!ovr?.endDate;
+                    const hasBudget = ovr?.budgetAmount != null;
                     const dateInputClass = (overridden) =>
                       `w-full text-center text-[10px] font-normal border rounded-md px-1 py-0.5 outline-none focus:ring-1 focus:ring-teal-400 transition ${
                         overridden ? "border-teal-300 text-teal-700 bg-teal-50" : "border-gray-200 text-gray-400 bg-white"
                       }`;
+                    const budgetVal = budgetEdits[s] !== undefined ? budgetEdits[s] : (ovr?.budgetAmount != null ? String(ovr.budgetAmount) : "");
                     return (
                       <th key={s} className="px-2 py-2 text-center text-xs font-semibold text-teal-700 border-l border-gray-200 first:border-l-0 min-w-[140px]">
                         <div className="mb-1.5">Sprint {s}</div>
@@ -785,6 +891,25 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
                               onChange={(e) => onUpdateSprintDate(s, "endDate", e.target.value)}
                               className={dateInputClass(endOverridden)}
                               title={endOverridden ? "Aangepaste einddatum" : "Berekende einddatum"}
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px] text-gray-400 w-5 shrink-0 text-right">€</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="100"
+                              placeholder="Budget"
+                              value={budgetVal}
+                              onChange={(e) => setBudgetEdits((prev) => ({ ...prev, [s]: e.target.value }))}
+                              onBlur={(e) => {
+                                const val = e.target.value.trim();
+                                onUpdateSprintDate(s, "budgetAmount", val ? parseFloat(val) : undefined);
+                                setBudgetEdits((prev) => { const n = { ...prev }; delete n[s]; return n; });
+                              }}
+                              className={`w-full text-center text-[10px] font-normal border rounded-md px-1 py-0.5 outline-none focus:ring-1 focus:ring-teal-400 transition ${
+                                hasBudget ? "border-teal-300 text-teal-700 bg-teal-50" : "border-gray-200 text-gray-400 bg-white"
+                              }`}
                             />
                           </div>
                         </div>
@@ -928,12 +1053,18 @@ export default function ProjectDetailPage({ params }) {
     load();
   }, [id]);
 
-  const handleUpdateSprintDate = useCallback(async (sprintNum, field, dateStr) => {
+  const handleUpdateSprintDate = useCallback(async (sprintNum, field, value) => {
     const current = JSON.parse(project.sprintStartDates || "[]");
     const existing = current.find((s) => s.sprint === sprintNum) ?? { sprint: sprintNum };
+    const newEntry = { ...existing };
+    if (value !== undefined && value !== "" && value !== null) {
+      newEntry[field] = value;
+    } else {
+      delete newEntry[field];
+    }
     const updated = current.filter((s) => s.sprint !== sprintNum);
-    const newEntry = { ...existing, [field]: dateStr || undefined };
-    if (newEntry.startDate || newEntry.endDate) updated.push(newEntry);
+    const hasData = Object.keys(newEntry).some((k) => k !== "sprint");
+    if (hasData) updated.push(newEntry);
     updated.sort((a, b) => a.sprint - b.sprint);
     await updateProject({ ...project, sprintStartDates: JSON.stringify(updated) });
     load();
