@@ -58,6 +58,39 @@ export async function GET() {
   });
   const hoursPerPerson = Object.entries(personMap).map(([name, hours]) => ({ name, hours }));
 
+  // Sprint budget overview per project (uses AFAS data + budgetAmount from sprintStartDates)
+  const sprintOverview = projects
+    .map((p) => {
+      const sprintLengthWeeks = p.sprintLengthWeeks || 2;
+      const numConfigured = p.budgetWeeks > 0 ? Math.ceil(p.budgetWeeks / sprintLengthWeeks) : 0;
+      const overrides = JSON.parse(p.sprintStartDates || "[]");
+
+      const afasSprintNums = [
+        ...new Set(
+          p.members.flatMap((m) =>
+            m.timeEntries.filter((t) => t.type === "AFAS").map((t) => t.weekNumber)
+          )
+        ),
+      ];
+      const maxSprint = Math.max(numConfigured, ...afasSprintNums, 0);
+      if (maxSprint === 0) return null;
+
+      const sprints = Array.from({ length: maxSprint }, (_, i) => i + 1).map((s) => {
+        const cost = p.members.reduce((sum, m) => {
+          const entry = m.timeEntries.find((t) => t.weekNumber === s && t.type === "AFAS");
+          return sum + (entry ? entry.hours * m.hourlyRate : 0);
+        }, 0);
+        const ovr = overrides.find((o) => o.sprint === s);
+        return { sprint: s, cost, budget: ovr?.budgetAmount ?? null };
+      });
+
+      const hasAny = sprints.some((s) => s.cost > 0 || s.budget != null);
+      if (!hasAny) return null;
+
+      return { id: p.id, name: p.name, totalBudget: p.budget, sprints };
+    })
+    .filter(Boolean);
+
   // Totals
   const totalHours = Object.values(weekMap).reduce((s, v) => s + v, 0);
   const totalCost = costPerProject.reduce((s, p) => s + p.kosten, 0);
@@ -66,6 +99,7 @@ export async function GET() {
     costPerProject,
     hoursPerWeek,
     hoursPerPerson,
+    sprintOverview,
     totalHours,
     totalCost,
     projectCount: projects.length,

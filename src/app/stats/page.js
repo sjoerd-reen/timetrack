@@ -55,6 +55,99 @@ export default function StatsPage() {
             <p className="text-gray-500 mt-1 text-sm">Inzicht in uren, kosten en verdeling over projecten</p>
           </div>
 
+          {/* Sprint Budget Overzicht per project */}
+          {stats.sprintOverview?.length > 0 && (
+            <div className="mb-10 space-y-6 animate-fade-in-up delay-50">
+              <h2 className="text-base font-semibold text-gray-700">Sprint Budget Overzicht</h2>
+              {stats.sprintOverview.map((project) => {
+                let runningBudget = project.totalBudget || 0;
+                let cumCost = 0;
+                const rows = project.sprints.map((s) => {
+                  const meerwerk = s.budget != null ? s.cost - s.budget : null;
+                  if (meerwerk != null && meerwerk > 0) runningBudget += meerwerk;
+                  cumCost += s.cost;
+                  const pct = runningBudget > 0 ? Math.min(100, (s.cost / runningBudget) * 100) : 0;
+                  return { ...s, meerwerk, pct, snapshotBudget: runningBudget };
+                });
+                const totaalPct = runningBudget > 0 ? Math.min(100, (cumCost / runningBudget) * 100) : 0;
+                const totaalMeerwerk = project.sprints.reduce((acc, s) => acc + (s.budget != null ? s.cost - s.budget : 0), 0);
+                const hasBudgets = project.sprints.some((s) => s.budget != null);
+
+                return (
+                  <div key={project.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-50 flex items-center gap-3">
+                      <h3 className="font-semibold text-gray-900">{project.name}</h3>
+                      {project.totalBudget > 0 && (
+                        <span className="text-xs text-gray-400">Totaalbudget: {fmtEur(project.totalBudget)}</span>
+                      )}
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-teal-600 text-white">
+                            <th className="px-5 py-3 text-left font-medium text-sm">Sprint</th>
+                            <th className="px-5 py-3 text-right font-medium text-sm">Gerealiseerde kosten</th>
+                            {hasBudgets && <th className="px-5 py-3 text-right font-medium text-sm">Budget sprint</th>}
+                            {hasBudgets && <th className="px-5 py-3 text-right font-medium text-sm">Meerwerk</th>}
+                            {hasBudgets && <th className="px-5 py-3 text-right font-medium text-sm">Huidig totaalbudget</th>}
+                            <th className="px-5 py-3 text-left font-medium text-sm min-w-[180px]">Verbruikt</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {rows.map((row, i) => (
+                            <tr key={row.sprint} className={i % 2 === 1 ? "bg-gray-50/60" : ""}>
+                              <td className="px-5 py-3 font-medium text-gray-900">Sprint {row.sprint}</td>
+                              <td className="px-5 py-3 text-right text-gray-700">{row.cost > 0 ? fmtEur(row.cost) : <span className="text-gray-300">—</span>}</td>
+                              {hasBudgets && <td className="px-5 py-3 text-right text-gray-500">{row.budget != null ? fmtEur(row.budget) : <span className="text-gray-300">—</span>}</td>}
+                              {hasBudgets && (
+                                <td className="px-5 py-3 text-right">
+                                  {row.meerwerk == null ? <span className="text-gray-300">—</span>
+                                    : row.meerwerk > 0 ? <span className="font-medium text-orange-500">+{fmtEur(row.meerwerk)}</span>
+                                    : row.meerwerk < 0 ? <span className="font-medium text-emerald-600">-{fmtEur(Math.abs(row.meerwerk))}</span>
+                                    : <span className="text-gray-400">—</span>}
+                                </td>
+                              )}
+                              {hasBudgets && <td className="px-5 py-3 text-right text-gray-700">{fmtEur(row.snapshotBudget)}</td>}
+                              <td className="px-5 py-3">
+                                {row.cost > 0 ? (
+                                  <>
+                                    <div className="w-40 h-1.5 rounded-full bg-gray-100 overflow-hidden mb-1">
+                                      <div className="h-full rounded-full bg-teal-600 transition-all" style={{ width: `${row.pct}%` }} />
+                                    </div>
+                                    <div className="text-xs text-gray-400">{row.pct.toFixed(1)}% van budget</div>
+                                  </>
+                                ) : <span className="text-gray-300">—</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-teal-600 text-white">
+                            <td className="px-5 py-3 font-semibold">Totaal</td>
+                            <td className="px-5 py-3 text-right font-semibold">{fmtEur(cumCost)}</td>
+                            {hasBudgets && <td className="px-5 py-3 text-right font-semibold">{fmtEur(project.sprints.reduce((s, r) => s + (r.budget ?? 0), 0))}</td>}
+                            {hasBudgets && (
+                              <td className="px-5 py-3 text-right font-semibold">
+                                {totaalMeerwerk > 0 ? `+${fmtEur(totaalMeerwerk)}` : totaalMeerwerk < 0 ? `-${fmtEur(Math.abs(totaalMeerwerk))}` : "—"}
+                              </td>
+                            )}
+                            {hasBudgets && <td className="px-5 py-3 text-right font-semibold">{fmtEur(runningBudget)}</td>}
+                            <td className="px-5 py-3">
+                              <div className="w-40 h-1.5 rounded-full overflow-hidden mb-1" style={{ background: "rgba(255,255,255,0.25)" }}>
+                                <div className="h-full rounded-full bg-white transition-all" style={{ width: `${totaalPct}%` }} />
+                              </div>
+                              <div className="text-xs text-white/75">{totaalPct.toFixed(1)}% van budget</div>
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             {[
