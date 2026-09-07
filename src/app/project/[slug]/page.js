@@ -181,7 +181,6 @@ function ProjectStats({ project, members }) {
 
   // ── Sprint budget overzicht (AFAS data) ──
   const sprintOverrides = JSON.parse(project.sprintStartDates || "[]");
-  const numConfigured = project.budgetWeeks > 0 ? Math.ceil(sprintLen / 1) : 0;
   const afasSprintNums = [...new Set(
     members.flatMap((m) => (m.timeEntries || []).filter((t) => t.type === "AFAS").map((t) => t.weekNumber))
   )];
@@ -197,7 +196,7 @@ function ProjectStats({ project, members }) {
       }, 0);
       const ovr = sprintOverrides.find((o) => o.sprint === s);
       const budget = ovr?.budgetAmount ?? null;
-      const meerwerk = budget != null ? cost - budget : null;
+      const meerwerk = (budget != null && cost > 0) ? cost - budget : null;
       if (meerwerk != null && meerwerk > 0) runningBudget += meerwerk;
       cumCost += cost;
       const pct = runningBudget > 0 ? Math.min(100, (cost / runningBudget) * 100) : 0;
@@ -452,6 +451,7 @@ function ProjectStats({ project, members }) {
 // ═══════════════════════════════════════════════════════════════
 function HoursTable({ title, type, members, numSprints, onSetHours, saving }) {
   const cellRefs = useRef({});
+  const [collapsed, setCollapsed] = useState(true);
   const sprints = Array.from({ length: numSprints }, (_, i) => i + 1);
 
   const getHours = (member, sprint) => {
@@ -496,14 +496,32 @@ function HoursTable({ title, type, members, numSprints, onSetHours, saving }) {
   const totalBg = type === "Planning" ? "bg-amber-50/50" : "bg-indigo-50/50";
   const accentColor = type === "Planning" ? "text-amber-600" : "text-indigo-600";
 
+  const totalHours = members.reduce((s, m) => s + getMemberTotalHours(m), 0);
+  const totalCost = members.reduce((s, m) => s + getMemberTotalCost(m), 0);
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-50">
-        <h2 className="font-semibold text-gray-900">{title}</h2>
-        <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${badgeBg}`}>{type}</span>
-        {saving && <span className="text-xs text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full animate-pulse">Opslaan...</span>}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
+        <div className="flex items-center gap-3">
+          <h2 className="font-semibold text-gray-900">{title}</h2>
+          <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${badgeBg}`}>{type}</span>
+          {saving && <span className="text-xs text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full animate-pulse">Opslaan...</span>}
+        </div>
+        <div className="flex items-center gap-4">
+          {collapsed && totalHours > 0 && (
+            <span className={`text-sm font-semibold ${accentColor}`}>
+              {totalHours}u {totalCost > 0 && <span className="text-emerald-600 font-normal text-xs ml-1">{fmtEur(totalCost)}</span>}
+            </span>
+          )}
+          <button onClick={() => setCollapsed((c) => !c)} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-50">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+        </div>
       </div>
-      <div className="overflow-x-auto">
+      {!collapsed && <><div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className={headerBg}>
@@ -589,9 +607,10 @@ function HoursTable({ title, type, members, numSprints, onSetHours, saving }) {
           </tfoot>
         </table>
       </div>
-      <div className="px-6 py-2.5 border-t border-gray-50 text-xs text-gray-400">
-        Tip: gebruik pijltjestoetsen, Tab en Enter om snel door de cellen te navigeren. Wijzigingen worden automatisch opgeslagen.
-      </div>
+        <div className="px-6 py-2.5 border-t border-gray-50 text-xs text-gray-400">
+          Tip: gebruik pijltjestoetsen, Tab en Enter om snel door de cellen te navigeren. Wijzigingen worden automatisch opgeslagen.
+        </div>
+      </>}
     </div>
   );
 }
@@ -966,7 +985,7 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
 // PROJECT DETAIL PAGE
 // ═══════════════════════════════════════════════════════════════
 export default function ProjectDetailPage({ params }) {
-  const { id } = use(params);
+  const { slug } = use(params);
   const router = useRouter();
   const [project, setProject] = useState(null);
   const [people, setPeople] = useState([]);
@@ -983,29 +1002,29 @@ export default function ProjectDetailPage({ params }) {
   const [afasResult, setAfasResult] = useState(null);
 
   const load = async () => {
-    const [proj, ppl] = await Promise.all([fetchProject(id), fetchPeople()]);
+    const [proj, ppl] = await Promise.all([fetchProject(slug), fetchPeople()]);
     setProject(proj);
     setPeople(ppl);
     setLoading(false);
   };
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); }, [slug]);
 
   const handleAfasImport = useCallback(async (rows) => {
     setImportingAfas(true);
     try {
-      const result = await importAfas(id, rows);
+      const result = await importAfas(project.id, rows);
       setAfasResult(result);
       load();
     } finally {
       setImportingAfas(false);
     }
-  }, [id]);
+  }, [slug]);
 
   const handleAfasClear = useCallback(async () => {
-    await deleteAfas(id);
+    await deleteAfas(project.id);
     setAfasResult(null);
     load();
-  }, [id]);
+  }, [slug]);
 
   const handleUpdateSprintDate = useCallback(async (sprintNum, field, value) => {
     const current = JSON.parse(project.sprintStartDates || "[]");

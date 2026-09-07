@@ -14,46 +14,41 @@ export async function GET() {
     },
   });
 
-  // Cost per project
+  // Cost per project — based on AFAS entries
   const costPerProject = projects.map((p) => {
     const hours = p.members.reduce(
-      (sum, m) => sum + m.timeEntries.filter((t) => t.type === "Realisatie").reduce((s, t) => s + t.hours, 0),
+      (sum, m) => sum + m.timeEntries.filter((t) => t.type === "AFAS").reduce((s, t) => s + t.hours, 0),
       0
     );
     const cost = p.members.reduce(
       (sum, m) =>
-        sum + m.timeEntries.filter((t) => t.type === "Realisatie").reduce((s, t) => s + t.hours, 0) * m.hourlyRate,
+        sum + m.timeEntries.filter((t) => t.type === "AFAS").reduce((s, t) => s + t.hours * m.hourlyRate, 0),
       0
     );
     return { name: p.name, kosten: cost, uren: hours };
   });
 
-  // Hours per week
-  const weekMap = {};
-  const planningMap = {};
+  // Hours per sprint — AFAS-based (weekNumber = sprint number for AFAS entries)
+  const sprintMap = {};
   projects.forEach((p) => {
     p.members.forEach((m) => {
-      m.timeEntries.forEach((t) => {
-        const map = t.type === "Realisatie" ? weekMap : planningMap;
-        map[t.weekNumber] = (map[t.weekNumber] || 0) + t.hours;
+      m.timeEntries.filter((t) => t.type === "AFAS").forEach((t) => {
+        sprintMap[t.weekNumber] = (sprintMap[t.weekNumber] || 0) + t.hours;
       });
     });
   });
-  const allWeeks = [...new Set([...Object.keys(weekMap), ...Object.keys(planningMap)])]
-    .map(Number)
-    .sort((a, b) => a - b);
-  const hoursPerWeek = allWeeks.map((w) => ({
-    week: `Wk ${w}`,
-    Realisatie: weekMap[w] || 0,
-    Planning: planningMap[w] || 0,
+  const allSprints = Object.keys(sprintMap).map(Number).sort((a, b) => a - b);
+  const hoursPerSprint = allSprints.map((s) => ({
+    sprint: `Sprint ${s}`,
+    Uren: sprintMap[s] || 0,
   }));
 
-  // Hours per person
+  // Hours per person — based on AFAS entries
   const personMap = {};
   projects.forEach((p) => {
     p.members.forEach((m) => {
-      const hrs = m.timeEntries.filter((t) => t.type === "Realisatie").reduce((s, t) => s + t.hours, 0);
-      personMap[m.person.name] = (personMap[m.person.name] || 0) + hrs;
+      const hrs = m.timeEntries.filter((t) => t.type === "AFAS").reduce((s, t) => s + t.hours, 0);
+      if (hrs > 0) personMap[m.person.name] = (personMap[m.person.name] || 0) + hrs;
     });
   });
   const hoursPerPerson = Object.entries(personMap).map(([name, hours]) => ({ name, hours }));
@@ -91,13 +86,13 @@ export async function GET() {
     })
     .filter(Boolean);
 
-  // Totals
-  const totalHours = Object.values(weekMap).reduce((s, v) => s + v, 0);
+  // Totals — AFAS-based
+  const totalHours = Object.values(sprintMap).reduce((s, v) => s + v, 0);
   const totalCost = costPerProject.reduce((s, p) => s + p.kosten, 0);
 
   return NextResponse.json({
     costPerProject,
-    hoursPerWeek,
+    hoursPerSprint,
     hoursPerPerson,
     sprintOverview,
     totalHours,

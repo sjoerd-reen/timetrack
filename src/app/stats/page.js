@@ -63,14 +63,14 @@ export default function StatsPage() {
                 let runningBudget = project.totalBudget || 0;
                 let cumCost = 0;
                 const rows = project.sprints.map((s) => {
-                  const meerwerk = s.budget != null ? s.cost - s.budget : null;
+                  const meerwerk = (s.budget != null && s.cost > 0) ? s.cost - s.budget : null;
                   if (meerwerk != null && meerwerk > 0) runningBudget += meerwerk;
                   cumCost += s.cost;
                   const pct = runningBudget > 0 ? Math.min(100, (s.cost / runningBudget) * 100) : 0;
                   return { ...s, meerwerk, pct, snapshotBudget: runningBudget };
                 });
                 const totaalPct = runningBudget > 0 ? Math.min(100, (cumCost / runningBudget) * 100) : 0;
-                const totaalMeerwerk = project.sprints.reduce((acc, s) => acc + (s.budget != null ? s.cost - s.budget : 0), 0);
+                const totaalMeerwerk = project.sprints.reduce((acc, s) => acc + ((s.budget != null && s.cost > 0) ? s.cost - s.budget : 0), 0);
                 const hasBudgets = project.sprints.some((s) => s.budget != null);
 
                 return (
@@ -182,18 +182,16 @@ export default function StatsPage() {
                 ),
               },
               {
-                title: "Uren per Week",
+                title: "Uren per Sprint (AFAS)",
                 delay: "delay-150",
                 chart: (
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={stats.hoursPerWeek}>
+                    <BarChart data={stats.hoursPerSprint}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="week" tick={{ fontSize: 12 }} />
+                      <XAxis dataKey="sprint" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 12 }} />
                       <Tooltip />
-                      <Legend />
-                      <Bar dataKey="Realisatie" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="Planning" fill="#c7d2fe" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Uren" fill="#6366f1" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 ),

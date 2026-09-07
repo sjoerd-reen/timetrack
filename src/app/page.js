@@ -6,7 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import Modal from "@/components/Modal";
 import { PlusIcon, UsersIcon, ClockIcon, EuroIcon, FolderIcon, TrashIcon } from "@/components/Icons";
 import { fetchProjects, createProject, deleteProject } from "@/lib/api";
-import { fmtEur } from "@/lib/utils";
+import { fmtEur, slugify } from "@/lib/utils";
 
 function SkeletonCard() {
   return (
@@ -32,16 +32,26 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", startDate: "" });
+  const [nameError, setNameError] = useState("");
 
   const load = () => fetchProjects().then(setProjects).finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
 
   const handleCreate = async () => {
     if (!form.name.trim()) return;
-    await createProject(form);
-    setForm({ name: "", description: "", startDate: "" });
-    setShowModal(false);
-    load();
+    setNameError("");
+    try {
+      await createProject(form);
+      setForm({ name: "", description: "", startDate: "" });
+      setShowModal(false);
+      load();
+    } catch (e) {
+      if (e.message?.includes("409") || e.status === 409) {
+        setNameError("Er bestaat al een project met deze naam. Kies een andere naam.");
+      } else {
+        throw e;
+      }
+    }
   };
 
   const handleDelete = async (id) => {
@@ -87,7 +97,7 @@ export default function DashboardPage() {
                   key={p.id}
                   className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-pointer group relative animate-fade-in-up"
                   style={{ animationDelay: `${index * 60}ms` }}
-                  onClick={() => router.push(`/project/${p.id}`)}
+                  onClick={() => router.push(`/project/${slugify(p.name)}`)}
                 >
                   <div className="p-6">
                     <div className="flex items-start justify-between mb-3">
@@ -114,17 +124,18 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <Modal open={showModal} onClose={() => setShowModal(false)} title="Nieuw Project">
+          <Modal open={showModal} onClose={() => { setShowModal(false); setNameError(""); }} title="Nieuw Project">
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Projectnaam *</label>
                 <input
                   value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow"
+                  onChange={(e) => { setForm({ ...form, name: e.target.value }); setNameError(""); }}
+                  className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:border-transparent outline-none transition-shadow ${nameError ? "border-red-300 focus:ring-red-300" : "border-gray-200 focus:ring-indigo-500"}`}
                   placeholder="bijv. Website Redesign"
                   autoFocus
                 />
+                {nameError && <p className="text-xs text-red-600 mt-1.5">{nameError}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Beschrijving</label>
