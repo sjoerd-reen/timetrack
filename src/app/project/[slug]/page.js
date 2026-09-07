@@ -1018,13 +1018,13 @@ export default function ProjectDetailPage({ params }) {
     } finally {
       setImportingAfas(false);
     }
-  }, [slug]);
+  }, [project?.id]);
 
   const handleAfasClear = useCallback(async () => {
     await deleteAfas(project.id);
     setAfasResult(null);
     load();
-  }, [slug]);
+  }, [project?.id]);
 
   const handleUpdateSprintDate = useCallback(async (sprintNum, field, value) => {
     const current = JSON.parse(project.sprintStartDates || "[]");
