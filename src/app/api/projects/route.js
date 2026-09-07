@@ -44,6 +44,10 @@ export async function GET() {
 // POST /api/projects — create a new project
 export async function POST(request) {
   const body = await request.json();
+  const existing = await prisma.project.findFirst({ where: { name: { equals: body.name, mode: "insensitive" } } });
+  if (existing) {
+    return NextResponse.json({ error: "duplicate_name", existingId: existing.id }, { status: 409 });
+  }
   const project = await prisma.project.create({
     data: {
       name: body.name,

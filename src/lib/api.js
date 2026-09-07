@@ -7,7 +7,7 @@ const json = (res) => {
 
 // Projects
 export const fetchProjects = () => fetch("/api/projects").then(json);
-export const fetchProject = (id) => fetch(`/api/projects/${id}`).then(json);
+export const fetchProject = (idOrSlug) => fetch(`/api/projects/${encodeURIComponent(idOrSlug)}`).then(json);
 export const createProject = (data) =>
   fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(json);
 export const updateProject = (data) =>
