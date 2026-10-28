@@ -75,6 +75,7 @@ export async function PUT(request) {
       budgetWeeks: parseInt(body.budgetWeeks) || 0,
       sprintLengthWeeks: parseInt(body.sprintLengthWeeks) || 2,
       sprintStartDates: body.sprintStartDates || "[]",
+      afasBillableOnly: body.afasBillableOnly !== false,
     },
   });
   return NextResponse.json(project);
