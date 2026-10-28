@@ -17,6 +17,7 @@ model Project {
   budgetWeeks Int             @default(0)
   sprintLengthWeeks Int       @default(2)
   sprintStartDates  String   @default("[]")
+  afasBillableOnly  Boolean  @default(true)
   createdAt   DateTime        @default(now())
   members     ProjectMember[]
 }

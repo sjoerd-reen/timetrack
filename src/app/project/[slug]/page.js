@@ -758,8 +758,9 @@ function AfasTable({ members, project, onImport, onClear, onUpdateSprintDate, im
     // Determine max possible sprint count for mapping (use budgetWeeks or fall back to 20)
     const numSprints = Math.max(numConfigured, 20);
 
+    const billableOnly = project.afasBillableOnly !== false;
     const rows = dataRows
-      .filter((r) => werk(r) === "BILL" && naam(r) && datum(r) && aant(r) > 0)
+      .filter((r) => (!billableOnly || werk(r) === "BILL") && naam(r) && datum(r) && aant(r) > 0)
       .map((r) => ({
         naam: naam(r),
         weekNumber: dateToAfasSprint(datum(r), numSprints, sprintOverrides, project.startDate, sprintLengthWeeks),
@@ -1118,6 +1119,7 @@ export default function ProjectDetailPage({ params }) {
       budget: project.budget || 0,
       budgetWeeks: project.budgetWeeks || 0,
       sprintLengthWeeks: project.sprintLengthWeeks || 2,
+      afasBillableOnly: project.afasBillableOnly !== false,
     });
     setShowEditProject(true);
   };
@@ -1319,6 +1321,21 @@ export default function ProjectDetailPage({ params }) {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Budget looptijd (weken)</label>
                   <input type="number" value={editForm.budgetWeeks || 0} onChange={(e) => setEditForm({ ...editForm, budgetWeeks: e.target.value })}
                     className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" min={0} max={104} />
+                </div>
+              </div>
+              <div className="border border-gray-100 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Alleen billable uren importeren</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Filtert AFAS-exports op werksoort "BILL". Zet uit als alle werksoorten meegenomen moeten worden.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditForm({ ...editForm, afasBillableOnly: !editForm.afasBillableOnly })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${editForm.afasBillableOnly ? "bg-indigo-600" : "bg-gray-200"}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${editForm.afasBillableOnly ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
                 </div>
               </div>
               <div className="flex justify-end gap-3 pt-2">
